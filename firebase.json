@@ -1,0 +1,35 @@
+{
+  "flutter": {
+    "platforms": {
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "sensorbox-6ccc8",
+          "configurations": {
+            "android": "1:164844211670:android:85b6b32915b6f3c98c6877"
+          }
+        }
+      },
+      "android": {
+        "default": {
+          "projectId": "sensorbox-6ccc8",
+          "appId": "1:164844211670:android:85b6b32915b6f3c98c6877",
+          "fileOutput": "android/app/google-services.json"
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}

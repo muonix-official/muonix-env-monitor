@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "164844211670",
+    "firebase_url": "https://sensorbox-6ccc8-default-rtdb.firebaseio.com",
+    "project_id": "sensorbox-6ccc8",
+    "storage_bucket": "sensorbox-6ccc8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:164844211670:android:85b6b32915b6f3c98c6877",
+        "android_client_info": {
+          "package_name": "com.example.sensorbox"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDExm4Wvrhd8hD-lfDw7m0ZmKjPcCb3UsA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
