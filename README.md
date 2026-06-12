@@ -65,7 +65,7 @@ An industrial-grade IoT environment monitoring app built with Flutter and Fireba
    ```
 
 3. Add your Firebase configuration
-   - Download `google-services.json` from your Firebase console
+   - Download `google-services.json` from Firebase console
    - Place it in `android/app/`
    - Download `GoogleService-Info.plist` for iOS and place it in `ios/Runner/`
 
@@ -76,21 +76,17 @@ An industrial-grade IoT environment monitoring app built with Flutter and Fireba
 
 ---
 
-## Firebase Setup
-
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable **Authentication** → Email/Password
-3. Enable **Realtime Database**
-4. Set up **Cloud Messaging** for push notifications
-5. Add your Android and iOS apps to the Firebase project
-
----
-
 ## Security
 
 - `google-services.json` and `GoogleService-Info.plist` are excluded from this repository
-- Firebase Realtime Database rules are configured to allow only authenticated users
-- All sensor data is transmitted securely over HTTPS
+- Firebase rules are configured to allow only authenticated users
+- All data is transmitted securely over HTTPS
+
+---
+
+## Privacy Policy
+
+[View Privacy Policy](https://muonix-official.github.io/muonix-env-monitor/privacy-policy.html)
 
 ---
 
@@ -115,16 +111,25 @@ lib/
 
 ---
 
+## About Muonix
+
+**Muonix Electrosystems LLP**
+A-5, Agra Rd, Sethi Colony, Jaipur, Rajasthan 302003
+📞 +91 92160 60505
+🌐 [muonix.co.in](http://muonix.co.in)
+📧 manishmuonix@gmail.com
+
+[![Facebook](https://img.shields.io/badge/Facebook-1877F2?style=flat&logo=facebook&logoColor=white)](https://www.facebook.com/people/Muonix-Electrosystems-Jaipur/61582457949982/)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://in.linkedin.com/company/muonix-electrosystems)
+[![Instagram](https://img.shields.io/badge/Instagram-E4405F?style=flat&logo=instagram&logoColor=white)](https://www.instagram.com/muonixelectrosystems/)
+[![YouTube](https://img.shields.io/badge/YouTube-FF0000?style=flat&logo=youtube&logoColor=white)](https://www.youtube.com/@MuonixElectrosystems/shorts)
+
+---
+
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-## Developer
-
-Built by **Bhoomika Jalandhra** during internship at **Muonix Electrosystems LLP**
-
----
-
-*© 2025 Muonix Electrosystems LLP. All rights reserved.*
+*Built by Bhoomika Jalandhra during internship at Muonix Electrosystems LLP*

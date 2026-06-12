@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
+
+  Future<void> _launchURL(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch $url');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +49,7 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 16),
 
             const Text(
-              'SensorBox',
+              'Muonix EnvGuard',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -66,15 +74,16 @@ class AboutScreen extends StatelessWidget {
               child: Column(
                 children: [
                   _buildInfoRow(Icons.business, 'Company',
-                      'Muonix Electrosystem'),
+                      'Muonix Electrosystems LLP'),
                   const Divider(color: Colors.white12),
-                  _buildInfoRow(Icons.location_on, 'Location', 'Jaipur, Rajasthan, India'),
+                  _buildInfoRow(Icons.location_on, 'Location',
+                      'Jaipur, Rajasthan, India'),
                   const Divider(color: Colors.white12),
-                  _buildInfoRow(Icons.email, 'Support',
-                      'support@muonix.in'),
+                  _buildInfoRow(
+                      Icons.email, 'Support', 'support@muonix.in'),
                   const Divider(color: Colors.white12),
-                  _buildInfoRow(Icons.language, 'Website',
-                      'www.muonix.in'),
+                  _buildInfoRow(
+                      Icons.language, 'Website', 'www.muonix.in'),
                 ],
               ),
             ),
@@ -96,7 +105,7 @@ class AboutScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'SensorBox is an IoT-based environment monitoring system that provides real-time temperature, humidity and gas level tracking with instant alerts.',
+                    'Muonix EnvGuard is an industrial IoT environment monitoring system that provides real-time temperature, humidity and gas level tracking with instant alerts when values exceed safe ranges.',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.5),
                       fontSize: 13,
@@ -123,13 +132,19 @@ class AboutScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _buildFeatureRow(Icons.thermostat, 'Real-time temperature monitoring'),
+                  _buildFeatureRow(
+                      Icons.thermostat, 'Real-time temperature monitoring'),
                   _buildFeatureRow(Icons.water_drop, 'Humidity tracking'),
-                  _buildFeatureRow(Icons.air, 'Gas leak detection (MQ-6)'),
-                  _buildFeatureRow(Icons.notifications, 'Instant alert notifications'),
-                  _buildFeatureRow(Icons.history, 'Data history with date filter'),
-                  _buildFeatureRow(Icons.qr_code_scanner, 'QR code device pairing'),
-                  _buildFeatureRow(Icons.devices, 'Multiple device support'),
+                  _buildFeatureRow(
+                      Icons.air, 'Gas leak detection (MQ-6)'),
+                  _buildFeatureRow(
+                      Icons.notifications, 'Instant alert notifications'),
+                  _buildFeatureRow(
+                      Icons.history, 'Data history with date filter'),
+                  _buildFeatureRow(
+                      Icons.qr_code_scanner, 'QR code device pairing'),
+                  _buildFeatureRow(
+                      Icons.devices, 'Multiple device support'),
                 ],
               ),
             ),
@@ -140,9 +155,21 @@ class AboutScreen extends StatelessWidget {
             _buildCard(
               child: Column(
                 children: [
-                  _buildLegalRow(context, Icons.privacy_tip, 'Privacy Policy'),
+                  _buildLegalRow(
+                    context,
+                    Icons.privacy_tip,
+                    'Privacy Policy',
+                    onTap: () => _launchURL(
+                        'https://muonix-official.github.io/muonix-env-monitor/privacy-policy.html'),
+                  ),
                   const Divider(color: Colors.white12),
-                  _buildLegalRow(context, Icons.description, 'Terms of Service'),
+                  _buildLegalRow(
+                    context,
+                    Icons.description,
+                    'Terms of Service',
+                    onTap: () => _launchURL(
+                        'https://muonix-official.github.io/muonix-env-monitor/privacy-policy.html'),
+                  ),
                 ],
               ),
             ),
@@ -150,7 +177,7 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 32),
 
             Text(
-              '© 2026 Muonix Electrosystem, Jaipur\nAll rights reserved.',
+              '© 2025 Muonix Electrosystems LLP, Jaipur\nAll rights reserved.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.25),
@@ -226,27 +253,32 @@ class AboutScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLegalRow(BuildContext context, IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.blue, size: 18),
-          const SizedBox(width: 12),
-          Text(
-            text,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.8),
-              fontSize: 13,
+  Widget _buildLegalRow(BuildContext context, IconData icon, String text,
+      {required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.blue, size: 18),
+            const SizedBox(width: 12),
+            Text(
+              text,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 13,
+              ),
             ),
-          ),
-          const Spacer(),
-          Icon(
-            Icons.arrow_forward_ios,
-            color: Colors.white.withValues(alpha: 0.3),
-            size: 14,
-          ),
-        ],
+            const Spacer(),
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.white.withValues(alpha: 0.3),
+              size: 14,
+            ),
+          ],
+        ),
       ),
     );
   }
