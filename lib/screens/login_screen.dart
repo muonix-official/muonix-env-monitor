@@ -30,16 +30,34 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       if (_isSignUp) {
-  final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-    email: _emailController.text.trim(),
-    password: _passwordController.text.trim(),
-  );
-  await credential.user?.sendEmailVerification();
-      } else {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        final credential =
+            await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
+        await credential.user?.sendEmailVerification();
+        await FirebaseAuth.instance.signOut();
+
+        if (mounted) {
+          setState(() => _isSignUp = false);
+          _showDialog(
+            title: 'Verify your email',
+            message:
+                'A verification link has been sent to ${_emailController.text.trim()}. Please verify your email before logging in.',
+          );
+        }
+      } else {
+        final credential =
+            await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
+
+        if (credential.user != null && !credential.user!.emailVerified) {
+          await FirebaseAuth.instance.signOut();
+          setState(() =>
+              _errorMessage = 'Please verify your email before logging in.\nCheck your inbox for the verification link.');
+        }
       }
     } on FirebaseAuthException catch (e) {
       setState(() {
@@ -68,44 +86,73 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _forgotPassword() async {
-    if (_emailController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Enter your email first then tap forgot password');
+  Future<void> _resendVerificationEmail() async {
+    if (_emailController.text.trim().isEmpty ||
+        _passwordController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Enter your email and password first');
       return;
     }
+    try {
+      final credential =
+          await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+      if (credential.user != null && !credential.user!.emailVerified) {
+        await credential.user!.sendEmailVerification();
+        await FirebaseAuth.instance.signOut();
+        if (mounted) {
+          _showDialog(
+            title: 'Email Sent!',
+            message:
+                'Verification email resent to ${_emailController.text.trim()}',
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() => _errorMessage = e.message ?? 'Error resending email');
+    }
+  }
 
+  Future<void> _forgotPassword() async {
+    if (_emailController.text.trim().isEmpty) {
+      setState(() =>
+          _errorMessage = 'Enter your email first then tap forgot password');
+      return;
+    }
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(
         email: _emailController.text.trim(),
       );
       if (mounted) {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            backgroundColor: const Color(0xFF1B2838),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: const Text(
-              'Email Sent!',
-              style: TextStyle(color: Colors.white),
-            ),
-            content: Text(
+        _showDialog(
+          title: 'Email Sent!',
+          message:
               'Password reset link sent to ${_emailController.text.trim()}',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK', style: TextStyle(color: Colors.blue)),
-              ),
-            ],
-          ),
         );
       }
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = e.message ?? 'Error sending reset email');
     }
+  }
+
+  void _showDialog({required String title, required String message}) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2838),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        content: Text(message,
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK', style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -142,17 +189,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: 1.5,
                       ),
                     ),
-                    child: const Icon(
-                      Icons.sensors,
-                      size: 52,
-                      color: Colors.blue,
-                    ),
+                    child: const Icon(Icons.sensors, size: 52, color: Colors.blue),
                   ),
 
                   const SizedBox(height: 24),
 
                   const Text(
-                    'SensorBox',
+                    'Muonix EnvGuard',
                     style: TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.bold,
@@ -179,9 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                     ),
                     child: Column(
                       children: [
@@ -192,25 +233,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
                             labelText: 'Email',
-                            labelStyle: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                            ),
-                            prefixIcon: Icon(
-                              Icons.email_outlined,
-                              color: Colors.blue.withValues(alpha: 0.8),
-                            ),
+                            labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                            prefixIcon: Icon(Icons.email_outlined,
+                                color: Colors.blue.withValues(alpha: 0.8)),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.15),
-                              ),
+                              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: Colors.blue,
-                                width: 1.5,
-                              ),
+                              borderSide: const BorderSide(color: Colors.blue, width: 1.5),
                             ),
                             filled: true,
                             fillColor: Colors.white.withValues(alpha: 0.05),
@@ -226,13 +258,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
                             labelText: 'Password',
-                            labelStyle: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                            ),
-                            prefixIcon: Icon(
-                              Icons.lock_outline,
-                              color: Colors.blue.withValues(alpha: 0.8),
-                            ),
+                            labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                            prefixIcon: Icon(Icons.lock_outline,
+                                color: Colors.blue.withValues(alpha: 0.8)),
                             suffixIcon: IconButton(
                               icon: Icon(
                                 _obscurePassword
@@ -245,16 +273,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.15),
-                              ),
+                              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: Colors.blue,
-                                width: 1.5,
-                              ),
+                              borderSide: const BorderSide(color: Colors.blue, width: 1.5),
                             ),
                             filled: true,
                             fillColor: Colors.white.withValues(alpha: 0.05),
@@ -263,20 +286,32 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         const SizedBox(height: 8),
 
-                        // Forgot password
+                        // Forgot password + resend verification
                         if (!_isSignUp)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: GestureDetector(
-                              onTap: _forgotPassword,
-                              child: Text(
-                                'Forgot Password?',
-                                style: TextStyle(
-                                  color: Colors.blue.withValues(alpha: 0.8),
-                                  fontSize: 13,
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              GestureDetector(
+                                onTap: _resendVerificationEmail,
+                                child: Text(
+                                  'Resend verification',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
-                            ),
+                              GestureDetector(
+                                onTap: _forgotPassword,
+                                child: Text(
+                                  'Forgot Password?',
+                                  style: TextStyle(
+                                    color: Colors.blue.withValues(alpha: 0.8),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
 
                         const SizedBox(height: 12),
@@ -289,16 +324,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             decoration: BoxDecoration(
                               color: Colors.red.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: Colors.red.withValues(alpha: 0.3),
-                              ),
+                              border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                             ),
                             child: Text(
                               _errorMessage,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 13,
-                              ),
+                              style: const TextStyle(color: Colors.red, fontSize: 13),
                             ),
                           ),
 
@@ -314,8 +344,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               backgroundColor: Colors.blue,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                                  borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                             ),
                             child: _isLoading
@@ -323,16 +352,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                     width: 22,
                                     height: 22,
                                     child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
+                                        color: Colors.white, strokeWidth: 2),
                                   )
                                 : Text(
                                     _isSignUp ? 'Create Account' : 'Login',
                                     style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                        fontSize: 16, fontWeight: FontWeight.bold),
                                   ),
                           ),
                         ),
@@ -348,18 +373,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Text(
                         _isSignUp ? 'Already have an account? ' : 'New user? ',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                        ),
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                       ),
                       GestureDetector(
                         onTap: () => setState(() => _isSignUp = !_isSignUp),
                         child: Text(
                           _isSignUp ? 'Login' : 'Create account',
                           style: const TextStyle(
-                            color: Colors.blue,
-                            fontWeight: FontWeight.bold,
-                          ),
+                              color: Colors.blue, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -367,13 +388,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 32),
 
-                  // Footer
                   Text(
-                    'Muonix Electrosystem • Jaipur',
+                    'Muonix Electrosystems LLP • Jaipur',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.25),
-                      fontSize: 12,
-                    ),
+                        color: Colors.white.withValues(alpha: 0.25), fontSize: 12),
                   ),
                 ],
               ),
