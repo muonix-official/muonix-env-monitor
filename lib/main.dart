@@ -30,7 +30,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SensorBox',
+      title: 'Muonix EnvGuard',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -61,9 +61,46 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class _VerifyEmailScreen extends StatelessWidget {
+class _VerifyEmailScreen extends StatefulWidget {
   final User user;
   const _VerifyEmailScreen({required this.user});
+
+  @override
+  State<_VerifyEmailScreen> createState() => _VerifyEmailScreenState();
+}
+
+class _VerifyEmailScreenState extends State<_VerifyEmailScreen> {
+  bool _isChecking = false;
+
+  Future<void> _checkVerification() async {
+  setState(() => _isChecking = true);
+  try {
+    await FirebaseAuth.instance.currentUser?.reload();
+    final updatedUser = FirebaseAuth.instance.currentUser;
+    if (updatedUser != null && updatedUser.emailVerified) {
+      // Will auto navigate via authStateChanges
+    } else {
+      // Not verified yet — sign out and go back to login
+      await FirebaseAuth.instance.signOut();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Email not verified yet. Please verify and login again.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  } finally {
+    if (mounted) setState(() => _isChecking = false);
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +139,7 @@ class _VerifyEmailScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'We sent a verification link to\n${user.email}\n\nPlease check your inbox and verify before continuing.',
+                'We sent a verification link to\n${widget.user.email}\n\nPlease check your inbox and verify before continuing.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.5),
@@ -115,10 +152,7 @@ class _VerifyEmailScreen extends StatelessWidget {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () async {
-                    await user.reload();
-                    await FirebaseAuth.instance.currentUser?.reload();
-                  },
+                  onPressed: _isChecking ? null : _checkVerification,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
@@ -126,19 +160,28 @@ class _VerifyEmailScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
-                    'I have verified — Continue',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: _isChecking
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'I have verified — Continue',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () async {
-                  await user.sendEmailVerification();
+                  await widget.user.sendEmailVerification();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(

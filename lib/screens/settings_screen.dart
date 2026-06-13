@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../widgets/contact_us_footer.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String deviceId;
@@ -91,226 +92,237 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Device Name
-                  _buildSectionTitle('Device'),
-                  _buildCard(
-                    child: TextField(
-                      controller: _deviceNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Device Name',
-                        prefixIcon: Icon(Icons.sensors),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Temperature
-                  _buildSectionTitle('Temperature Safe Range'),
-                  _buildCard(
+          ? const Column(
+              children: [
+                Expanded(child: Center(child: CircularProgressIndicator())),
+                ContactUsFooter(),
+              ],
+            )
+          : Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Min Temp'),
-                            Text(
-                              '${minTemp.toInt()}°C',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue,
-                              ),
+                        _buildSectionTitle('Device'),
+                        _buildCard(
+                          child: TextField(
+                            controller: _deviceNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Device Name',
+                              prefixIcon: Icon(Icons.sensors),
+                              border: OutlineInputBorder(),
                             ),
-                          ],
-                        ),
-                        Slider(
-                          value: minTemp,
-                          min: 0,
-                          max: 40,
-                          divisions: 40,
-                          onChanged: (val) {
-                            if (val < maxTemp) {
-                              setState(() => minTemp = val);
-                            }
-                          },
-                        ),
-                        const Divider(),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Max Temp'),
-                            Text(
-                              '${maxTemp.toInt()}°C',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Slider(
-                          value: maxTemp,
-                          min: 0,
-                          max: 60,
-                          divisions: 60,
-                          onChanged: (val) {
-                            if (val > minTemp) {
-                              setState(() => maxTemp = val);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Humidity
-                  _buildSectionTitle('Humidity Safe Range'),
-                  _buildCard(
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Min Humidity'),
-                            Text(
-                              '${minHum.toInt()}%',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Slider(
-                          value: minHum,
-                          min: 0,
-                          max: 100,
-                          divisions: 100,
-                          onChanged: (val) {
-                            if (val < maxHum) {
-                              setState(() => minHum = val);
-                            }
-                          },
-                        ),
-                        const Divider(),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Max Humidity'),
-                            Text(
-                              '${maxHum.toInt()}%',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Slider(
-                          value: maxHum,
-                          min: 0,
-                          max: 100,
-                          divisions: 100,
-                          onChanged: (val) {
-                            if (val > minHum) {
-                              setState(() => maxHum = val);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Gas
-                  _buildSectionTitle('Gas Level Safe Threshold (MQ-6)'),
-                  _buildCard(
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Max Gas Level'),
-                            Text(
-                              '${maxGas.toInt()}%',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.purple,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Slider(
-                          value: maxGas,
-                          min: 10,
-                          max: 100,
-                          divisions: 90,
-                          activeColor: Colors.purple,
-                          onChanged: (val) {
-                            setState(() => maxGas = val);
-                          },
-                        ),
-                        const Text(
-                          'Alert triggers when gas level exceeds this value',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
                           ),
                         ),
+
+                        const SizedBox(height: 24),
+
+                        _buildSectionTitle('Temperature Safe Range'),
+                        _buildCard(
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Min Temp'),
+                                  Text(
+                                    '${minTemp.toInt()}°C',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: minTemp,
+                                min: 0,
+                                max: 40,
+                                divisions: 40,
+                                onChanged: (val) {
+                                  if (val < maxTemp) {
+                                    setState(() => minTemp = val);
+                                  }
+                                },
+                              ),
+                              const Divider(),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Max Temp'),
+                                  Text(
+                                    '${maxTemp.toInt()}°C',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: maxTemp,
+                                min: 0,
+                                max: 60,
+                                divisions: 60,
+                                onChanged: (val) {
+                                  if (val > minTemp) {
+                                    setState(() => maxTemp = val);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        _buildSectionTitle('Humidity Safe Range'),
+                        _buildCard(
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Min Humidity'),
+                                  Text(
+                                    '${minHum.toInt()}%',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: minHum,
+                                min: 0,
+                                max: 100,
+                                divisions: 100,
+                                onChanged: (val) {
+                                  if (val < maxHum) {
+                                    setState(() => minHum = val);
+                                  }
+                                },
+                              ),
+                              const Divider(),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Max Humidity'),
+                                  Text(
+                                    '${maxHum.toInt()}%',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: maxHum,
+                                min: 0,
+                                max: 100,
+                                divisions: 100,
+                                onChanged: (val) {
+                                  if (val > minHum) {
+                                    setState(() => maxHum = val);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        _buildSectionTitle('Gas Level Safe Threshold (MQ-6)'),
+                        _buildCard(
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Max Gas Level'),
+                                  Text(
+                                    '${maxGas.toInt()}%',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.purple,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: maxGas,
+                                min: 10,
+                                max: 100,
+                                divisions: 90,
+                                activeColor: Colors.purple,
+                                onChanged: (val) {
+                                  setState(() => maxGas = val);
+                                },
+                              ),
+                              const Text(
+                                'Alert triggers when gas level exceeds this value',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        _buildSectionTitle('Notifications'),
+                        _buildCard(
+                          child: SwitchListTile(
+                            title: const Text('Enable Alerts'),
+                            subtitle: const Text(
+                                'Get notified when values are unsafe'),
+                            value: notifyEnabled,
+                            onChanged: (val) =>
+                                setState(() => notifyEnabled = val),
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.restore),
+                            label: const Text('Reset to Defaults'),
+                            onPressed: () {
+                              setState(() {
+                                minTemp = 18;
+                                maxTemp = 35;
+                                minHum = 30;
+                                maxHum = 80;
+                                maxGas = 70;
+                                notifyEnabled = true;
+                                _deviceNameController.text = 'My SensorBox';
+                              });
+                            },
+                          ),
+                        ),
+
+                        const SizedBox(height: 32),
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 24),
-
-                  // Notifications
-                  _buildSectionTitle('Notifications'),
-                  _buildCard(
-                    child: SwitchListTile(
-                      title: const Text('Enable Alerts'),
-                      subtitle:
-                          const Text('Get notified when values are unsafe'),
-                      value: notifyEnabled,
-                      onChanged: (val) =>
-                          setState(() => notifyEnabled = val),
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Reset
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.restore),
-                      label: const Text('Reset to Defaults'),
-                      onPressed: () {
-                        setState(() {
-                          minTemp = 18;
-                          maxTemp = 35;
-                          minHum = 30;
-                          maxHum = 80;
-                          maxGas = 70;
-                          notifyEnabled = true;
-                          _deviceNameController.text = 'My SensorBox';
-                        });
-                      },
-                    ),
-                  ),
-
-                  const SizedBox(height: 32),
-                ],
-              ),
+                ),
+                const ContactUsFooter(),
+              ],
             ),
     );
   }

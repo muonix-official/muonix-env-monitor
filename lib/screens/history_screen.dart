@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import '../widgets/contact_us_footer.dart';
 
 class HistoryScreen extends StatefulWidget {
   final String deviceId;
@@ -129,7 +130,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ],
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Column(
+              children: [
+                const Expanded(
+                    child: Center(child: CircularProgressIndicator())),
+                const ContactUsFooter(),
+              ],
+            )
           : Column(
               children: [
                 if (selectedDate != null)
@@ -149,7 +156,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ],
                     ),
                   ),
-
                 if (filteredReadings.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -179,9 +185,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ],
                     ),
                   ),
-
                 const Divider(height: 1),
-
                 filteredReadings.isEmpty
                     ? const Expanded(
                         child: Center(
@@ -212,7 +216,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 color: Colors.white.withValues(alpha: 0.05),
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.1)),
+                                    color:
+                                        Colors.white.withValues(alpha: 0.1)),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,21 +230,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   const SizedBox(height: 8),
                                   Row(
                                     children: [
-                                      // Temp
                                       _buildTag(
                                         '${r['temp'].toStringAsFixed(1)}°C',
                                         Icons.thermostat,
                                         _getTempColor(r['temp']),
                                       ),
                                       const SizedBox(width: 8),
-                                      // Humidity
                                       _buildTag(
                                         '${r['humidity'].toStringAsFixed(1)}%',
                                         Icons.water_drop,
                                         _getHumColor(r['humidity']),
                                       ),
                                       const SizedBox(width: 8),
-                                      // Gas
                                       _buildTag(
                                         '${r['gasLevel'].toStringAsFixed(1)}%',
                                         Icons.air,
@@ -253,6 +255,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           },
                         ),
                       ),
+                const ContactUsFooter(),
               ],
             ),
     );

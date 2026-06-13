@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'qr_scanner_screen.dart';
 import 'dashboard_screen.dart';
 import 'about_screen.dart';
+import '../widgets/contact_us_footer.dart';
 
 class DevicesScreen extends StatefulWidget {
   const DevicesScreen({super.key});
@@ -14,12 +15,14 @@ class DevicesScreen extends StatefulWidget {
 
 class _DevicesScreenState extends State<DevicesScreen> {
   List<Map<String, dynamic>> devices = [];
+  List<Map<String, dynamic>> pendingRequests = [];
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadDevices();
+    _loadPendingRequests();
   }
 
   void _loadDevices() {
@@ -46,6 +49,215 @@ class _DevicesScreenState extends State<DevicesScreen> {
     });
   }
 
+  void _loadPendingRequests() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    FirebaseDatabase.instance
+        .ref('users/${user.uid}/devices')
+        .onValue
+        .listen((event) {
+      final data = event.snapshot.value as Map?;
+      if (data == null) return;
+
+      for (final deviceId in data.keys) {
+        FirebaseDatabase.instance
+            .ref('devices/$deviceId/requests')
+            .onValue
+            .listen((reqEvent) {
+          final reqData = reqEvent.snapshot.value as Map?;
+          if (!mounted) return;
+
+          List<Map<String, dynamic>> updated = List.from(pendingRequests)
+            ..removeWhere((r) => r['deviceId'] == deviceId.toString());
+
+          if (reqData != null) {
+            for (final entry in reqData.entries) {
+              final req = Map<String, dynamic>.from(entry.value as Map);
+              if (req['status'] == 'pending') {
+                updated.add({
+                  ...req,
+                  'deviceId': deviceId.toString(),
+                  'requesterUid': entry.key.toString(),
+                });
+              }
+            }
+          }
+
+          setState(() => pendingRequests = updated);
+        });
+      }
+    });
+  }
+
+  Future<void> _approveRequest(
+      String deviceId, String requesterUid, String requesterEmail) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await FirebaseDatabase.instance
+        .ref('devices/$deviceId/members/$requesterUid')
+        .set('approved');
+
+    await FirebaseDatabase.instance
+        .ref('devices/$deviceId/requests/$requesterUid/status')
+        .set('approved');
+
+    await FirebaseDatabase.instance
+        .ref('users/$requesterUid/devices/$deviceId')
+        .set({
+      'deviceId': deviceId,
+      'addedAt': DateTime.now().toIso8601String(),
+      'name': deviceId,
+    });
+
+    await FirebaseDatabase.instance
+        .ref('users/$requesterUid/notifications/${deviceId}_approved')
+        .set({
+      'type': 'access_approved',
+      'deviceId': deviceId,
+      'message': 'Your access request for $deviceId has been approved!',
+      'read': false,
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$requesterEmail approved for $deviceId'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _denyRequest(
+      String deviceId, String requesterUid, String requesterEmail) async {
+    await FirebaseDatabase.instance
+        .ref('devices/$deviceId/requests/$requesterUid/status')
+        .set('denied');
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$requesterEmail denied for $deviceId'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showRequestsDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2838),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Access Requests',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: pendingRequests.isEmpty
+              ? const Text(
+                  'No pending requests',
+                  style: TextStyle(color: Colors.grey),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: pendingRequests.length,
+                  itemBuilder: (context, index) {
+                    final req = pendingRequests[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: Colors.orange.withValues(alpha: 0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            req['email'] ?? 'Unknown',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Wants access to ${req['deviceId']}',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _approveRequest(
+                                      req['deviceId'],
+                                      req['requesterUid'],
+                                      req['email'] ?? '',
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text('Approve'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _denyRequest(
+                                      req['deviceId'],
+                                      req['requesterUid'],
+                                      req['email'] ?? '',
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text('Deny'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close', style: TextStyle(color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _scanQR() async {
     final result = await Navigator.push(
       context,
@@ -67,7 +279,8 @@ class _DevicesScreenState extends State<DevicesScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1B2838),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Remove Device',
             style: TextStyle(color: Colors.white)),
         content: Text(
@@ -77,7 +290,8 @@ class _DevicesScreenState extends State<DevicesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () {
@@ -102,7 +316,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'SensorBox',
+              'Muonix EnvGuard',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -110,35 +324,72 @@ class _DevicesScreenState extends State<DevicesScreen> {
               ),
             ),
             Text(
-              'Muonix Electrosystem',
-              style: TextStyle(
-                color: Colors.blue,
-                fontSize: 12,
-              ),
+              'Muonix Electrosystems LLP',
+              style: TextStyle(color: Colors.blue, fontSize: 12),
             ),
           ],
         ),
         actions: [
-  IconButton(
-    icon: const Icon(Icons.info_outline, color: Colors.white),
-    onPressed: () => Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AboutScreen()),
-    ),
-    tooltip: 'About',
-  ),
-  IconButton(
-    icon: const Icon(Icons.logout, color: Colors.white),
-    onPressed: () => FirebaseAuth.instance.signOut(),
-    tooltip: 'Logout',
-  ),
-],
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined,
+                    color: Colors.white),
+                onPressed: _showRequestsDialog,
+                tooltip: 'Access Requests',
+              ),
+              if (pendingRequests.isNotEmpty)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${pendingRequests.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.info_outline, color: Colors.white),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AboutScreen()),
+            ),
+            tooltip: 'About',
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: () => FirebaseAuth.instance.signOut(),
+            tooltip: 'Logout',
+          ),
+        ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : devices.isEmpty
-              ? _buildEmptyState()
-              : _buildDeviceList(),
+      body: Column(
+        children: [
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : devices.isEmpty
+                    ? _buildEmptyState()
+                    : _buildDeviceList(),
+          ),
+          const ContactUsFooter(),
+        ],
+      ),
       floatingActionButton: devices.isNotEmpty
           ? FloatingActionButton.extended(
               onPressed: _scanQR,
@@ -163,15 +414,10 @@ class _DevicesScreenState extends State<DevicesScreen> {
               decoration: BoxDecoration(
                 color: Colors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(32),
-                border: Border.all(
-                  color: Colors.blue.withValues(alpha: 0.3),
-                ),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
               ),
-              child: const Icon(
-                Icons.sensors_off,
-                size: 56,
-                color: Colors.blue,
-              ),
+              child:
+                  const Icon(Icons.sensors_off, size: 56, color: Colors.blue),
             ),
             const SizedBox(height: 24),
             const Text(
@@ -184,7 +430,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Scan the QR code on your\nSensorBox device to get started',
+              'Scan the QR code on your\nMuonix EnvGuard device to get started',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.5),
@@ -199,10 +445,8 @@ class _DevicesScreenState extends State<DevicesScreen> {
                 icon: const Icon(Icons.qr_code_scanner),
                 label: const Text(
                   'Scan QR Code',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
@@ -246,13 +490,11 @@ class _DevicesScreenState extends State<DevicesScreen> {
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.blue.withValues(alpha: 0.3),
-              ),
+              border:
+                  Border.all(color: Colors.blue.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
-                // Icon
                 Container(
                   width: 52,
                   height: 52,
@@ -260,19 +502,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
                     color: Colors.blue.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: Colors.blue.withValues(alpha: 0.3),
-                    ),
+                        color: Colors.blue.withValues(alpha: 0.3)),
                   ),
-                  child: const Icon(
-                    Icons.sensors,
-                    color: Colors.blue,
-                    size: 26,
-                  ),
+                  child: const Icon(Icons.sensors,
+                      color: Colors.blue, size: 26),
                 ),
-
                 const SizedBox(width: 16),
-
-                // Info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,8 +531,6 @@ class _DevicesScreenState extends State<DevicesScreen> {
                     ],
                   ),
                 ),
-
-                // Arrow
                 Container(
                   width: 32,
                   height: 32,
@@ -305,11 +538,8 @@ class _DevicesScreenState extends State<DevicesScreen> {
                     color: Colors.blue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
-                    Icons.arrow_forward_ios,
-                    color: Colors.blue,
-                    size: 14,
-                  ),
+                  child: const Icon(Icons.arrow_forward_ios,
+                      color: Colors.blue, size: 14),
                 ),
               ],
             ),
