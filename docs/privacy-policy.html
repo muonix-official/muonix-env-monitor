@@ -28,41 +28,83 @@
     <p class="updated">Last updated: June 2025</p>
     <p>This Privacy Policy describes how Muonix Electrosystems LLP ("we", "us", or "our") collects, uses, and protects information when you use the <strong>Muonix EnvGuard</strong> mobile application ("the App").</p>
     <hr class="divider"/>
+
     <h2>1. Information We Collect</h2>
     <p>We collect the following information when you use the App:</p>
     <ul>
       <li><strong>Email address</strong> — used for account creation and login via Firebase Authentication</li>
       <li><strong>Sensor data</strong> — temperature, humidity, and gas level readings from your connected IoT devices</li>
-      <li><strong>Device identifiers</strong> — unique IDs of IoT devices you pair with the app via QR code</li>
-      <li><strong>Usage data</strong> — app interactions such as threshold settings and alert configurations</li>
+      <li><strong>Device identifiers</strong> — MAC address-based unique IDs (e.g. BOX-XXXXXXXXXXXX) of IoT devices you pair with the App via QR code</li>
+      <li><strong>Device names</strong> — custom names you assign to your devices, stored per user account</li>
+      <li><strong>Usage data</strong> — app interactions such as threshold settings, alert configurations, and notification preferences</li>
+      <li><strong>Access requests</strong> — when a user requests access to a shared device, their email and user ID are stored temporarily for owner approval</li>
+      <li><strong>FCM token</strong> — a device-specific token used to deliver push notifications to your device</li>
     </ul>
+
     <h2>2. How We Use Your Information</h2>
     <ul>
       <li>Authenticate your account and keep it secure</li>
       <li>Display real-time sensor readings from your connected devices</li>
-      <li>Send push notifications when sensor values exceed your set thresholds</li>
+      <li>Send push notifications when sensor values exceed your configured thresholds</li>
+      <li>Send notifications when a device goes online or offline</t>
+      <li>Notify device owners when another user requests access to their device</li>
       <li>Store historical sensor data for your review</li>
+      <li>Enable multi-user device sharing with owner-controlled access approval</li>
+      <li>Display sensor warmup status so users are not misled by unstabilized readings</li>
       <li>Improve the performance and reliability of the App</li>
     </ul>
-    <h2>3. Data Storage</h2>
-    <p>All data is stored securely using <strong>Firebase</strong> (Google LLC), hosted on Google's cloud infrastructure. Data is accessible only to authenticated users. Firebase complies with GDPR and major data protection regulations.</p>
-    <h2>4. Data Sharing</h2>
+
+    <h2>3. Device Sharing and Multi-User Access</h2>
+    <p>The App supports shared device access. When you share a device:</p>
+    <ul>
+      <li>The device owner can approve or deny access requests from other users</li>
+      <li>Approved users can view real-time sensor data and history for that device</li>
+      <li>Each user may assign their own custom name to a shared device independently</li>
+      <li>Only the device owner can manage access permissions</li>
+      <li>Access request data (email, user ID, timestamp, status) is stored in Firebase under the device record</li>
+    </ul>
+
+    <h2>4. Data Storage</h2>
+    <p>All data is stored securely using <strong>Firebase Realtime Database and Firebase Authentication</strong> (Google LLC), hosted on Google's cloud infrastructure. Data is accessible only to authenticated and authorized users. Firebase complies with GDPR and major data protection regulations.</p>
+    <p>Sensor history data is stored indefinitely unless you request deletion. Real-time live data is overwritten on every sensor update cycle (every 5 seconds).</p>
+
+    <h2>5. Data Sharing</h2>
     <p>We do <strong>not</strong> sell or share your personal data with third parties, except:</p>
     <ul>
       <li><strong>Firebase / Google</strong> — for data storage, authentication, and push notifications</li>
       <li><strong>Legal requirements</strong> — if required by law or to protect our legal rights</li>
     </ul>
-    <h2>5. Push Notifications</h2>
-    <p>The App sends push notifications via Firebase Cloud Messaging (FCM) when sensor readings exceed configured thresholds. You can disable notifications at any time from your device settings.</p>
-    <h2>6. Data Retention</h2>
-    <p>We retain your data for as long as your account is active. You may request deletion by contacting us at the email below.</p>
-    <h2>7. Security</h2>
-    <p>We implement industry-standard security including encrypted data transmission (HTTPS) and Firebase security rules ensuring only authenticated users can access their own data.</p>
-    <h2>8. Children's Privacy</h2>
+
+    <h2>6. Push Notifications</h2>
+    <p>The App sends the following types of local and push notifications:</p>
+    <ul>
+      <li><strong>Sensor alerts</strong> — when temperature, humidity, or gas levels exceed your configured safe thresholds</li>
+      <li><strong>Device offline alerts</strong> — when a paired device stops sending data and goes offline</li>
+      <li><strong>Device online alerts</strong> — when a previously offline device reconnects and resumes sending data</li>
+      <li><strong>Access request notifications</strong> — when another user requests access to your device</li>
+      <li><strong>Access approval notifications</strong> — when the owner approves your access request</li>
+    </ul>
+    <p>You can disable notifications at any time from your device settings. Sensor alert notifications are suppressed during the device warmup period (approximately 30 seconds after power-on) to prevent false alerts.</p>
+
+    <h2>7. Data Retention</h2>
+    <p>We retain your data for as long as your account is active. Sensor history accumulates over time and is not automatically deleted. You may request deletion of your account and associated data by contacting us at the email below.</p>
+
+    <h2>8. Security</h2>
+    <p>We implement industry-standard security measures including:</p>
+    <ul>
+      <li>Encrypted data transmission over HTTPS</li>
+      <li>Firebase security rules ensuring users can only access devices they own or have been approved for</li>
+      <li>Authentication required for all sensitive read and write operations</li>
+      <li>Device pairing via physical QR code scan, preventing unauthorized remote pairing</li>
+    </ul>
+
+    <h2>9. Children's Privacy</h2>
     <p>The App is intended for industrial and professional use and is not directed at children under 13. We do not knowingly collect personal information from children.</p>
-    <h2>9. Changes to This Policy</h2>
-    <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated date.</p>
-    <h2>10. Contact Us</h2>
+
+    <h2>10. Changes to This Policy</h2>
+    <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated date. Continued use of the App after changes constitutes acceptance of the updated policy.</p>
+
+    <h2>11. Contact Us</h2>
     <ul>
       <li><strong>Company:</strong> Muonix Electrosystems LLP</li>
       <li><strong>Address:</strong> A-5, Agra Rd, Sethi Colony, Jaipur, Rajasthan 302003</li>
@@ -70,6 +112,7 @@
       <li><strong>Email:</strong> <a href="mailto:manishmuonix@gmail.com">manishmuonix@gmail.com</a></li>
       <li><strong>Website:</strong> <a href="http://muonix.co.in" target="_blank">muonix.co.in</a></li>
     </ul>
+
     <hr class="divider"/>
     <p class="footer">© 2025 Muonix Electrosystems LLP, A-5, Agra Rd, Sethi Colony, Jaipur, Rajasthan 302003. All rights reserved.</p>
   </div>

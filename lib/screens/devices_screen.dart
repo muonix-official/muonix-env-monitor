@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -5,6 +6,7 @@ import 'qr_scanner_screen.dart';
 import 'dashboard_screen.dart';
 import 'about_screen.dart';
 import '../widgets/contact_us_footer.dart';
+import '../services/notification_service.dart';
 
 class DevicesScreen extends StatefulWidget {
   const DevicesScreen({super.key});
@@ -16,6 +18,11 @@ class DevicesScreen extends StatefulWidget {
 class _DevicesScreenState extends State<DevicesScreen> {
   List<Map<String, dynamic>> devices = [];
   List<Map<String, dynamic>> pendingRequests = [];
+  Map<String, bool> deviceOnlineStatus = {};
+  Map<String, String> deviceTimestamps = {};
+  final Map<String, StreamSubscription> _liveListeners = {};
+  final Map<String, bool> _previousOnlineStatus = {};
+  Timer? _onlineCheckTimer;
   bool isLoading = true;
 
   @override
@@ -23,6 +30,61 @@ class _DevicesScreenState extends State<DevicesScreen> {
     super.initState();
     _loadDevices();
     _loadPendingRequests();
+    _onlineCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) {
+        setState(() {
+          for (final deviceId in deviceTimestamps.keys) {
+            final nowOnline = _checkIsOnline(deviceTimestamps[deviceId]);
+            final wasOnline = _previousOnlineStatus[deviceId];
+
+            if (wasOnline == true && !nowOnline) {
+              final name = devices
+                  .firstWhere(
+                    (d) => d['deviceId'] == deviceId,
+                    orElse: () => {'name': deviceId},
+                  )['name'] ?? deviceId;
+              NotificationService.showLocalNotification(
+                '📴 Device Offline',
+                '$name has gone offline.',
+              );
+            } else if (wasOnline == false && nowOnline) {
+              final name = devices
+                  .firstWhere(
+                    (d) => d['deviceId'] == deviceId,
+                    orElse: () => {'name': deviceId},
+                  )['name'] ?? deviceId;
+              NotificationService.showLocalNotification(
+                '✅ Device Online',
+                '$name is back online.',
+              );
+            }
+
+            deviceOnlineStatus[deviceId] = nowOnline;
+            _previousOnlineStatus[deviceId] = nowOnline;
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _onlineCheckTimer?.cancel();
+    for (final sub in _liveListeners.values) {
+      sub.cancel();
+    }
+    super.dispose();
+  }
+
+  bool _checkIsOnline(String? ts) {
+    if (ts == null || ts.isEmpty) return false;
+    try {
+      final lastSeen = DateTime.parse(ts).toUtc();
+      final diff = DateTime.now().toUtc().difference(lastSeen).inSeconds;
+      return diff >= 0 && diff < 30;
+    } catch (_) {
+      return false;
+    }
   }
 
   void _loadDevices() {
@@ -34,17 +96,69 @@ class _DevicesScreenState extends State<DevicesScreen> {
         .onValue
         .listen((event) {
       final data = event.snapshot.value as Map?;
-      if (mounted) {
-        setState(() {
-          if (data != null) {
-            devices = data.values
-                .map((d) => Map<String, dynamic>.from(d as Map))
-                .toList();
-          } else {
-            devices = [];
+      if (!mounted) return;
+
+      setState(() {
+        if (data != null) {
+          devices = data.values
+              .map((d) => Map<String, dynamic>.from(d as Map))
+              .toList();
+        } else {
+          devices = [];
+        }
+        isLoading = false;
+      });
+
+      for (final sub in _liveListeners.values) {
+        sub.cancel();
+      }
+      _liveListeners.clear();
+
+      for (final device in devices) {
+        final deviceId = device['deviceId'] ?? '';
+        if (deviceId.isEmpty) continue;
+
+        final sub = FirebaseDatabase.instance
+            .ref('devices/$deviceId/live')
+            .onValue
+            .listen((liveEvent) {
+          final liveData = liveEvent.snapshot.value as Map?;
+          final ts = liveData?['ts'] as String?;
+          if (mounted) {
+            final nowOnline = _checkIsOnline(ts);
+            final wasOnline = _previousOnlineStatus[deviceId];
+
+            if (wasOnline == true && !nowOnline) {
+              final name = devices
+                  .firstWhere(
+                    (d) => d['deviceId'] == deviceId,
+                    orElse: () => {'name': deviceId},
+                  )['name'] ?? deviceId;
+              NotificationService.showLocalNotification(
+                '📴 Device Offline',
+                '$name has gone offline.',
+              );
+            } else if (wasOnline == false && nowOnline) {
+              final name = devices
+                  .firstWhere(
+                    (d) => d['deviceId'] == deviceId,
+                    orElse: () => {'name': deviceId},
+                  )['name'] ?? deviceId;
+              NotificationService.showLocalNotification(
+                '✅ Device Online',
+                '$name is back online.',
+              );
+            }
+
+            setState(() {
+              deviceTimestamps[deviceId] = ts ?? '';
+              deviceOnlineStatus[deviceId] = nowOnline;
+              _previousOnlineStatus[deviceId] = nowOnline;
+            });
           }
-          isLoading = false;
         });
+
+        _liveListeners[deviceId] = sub;
       }
     });
   }
@@ -95,6 +209,13 @@ class _DevicesScreenState extends State<DevicesScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    final settingsSnap = await FirebaseDatabase.instance
+        .ref('devices/$deviceId/settings/deviceName')
+        .get();
+    final deviceName = settingsSnap.exists
+        ? (settingsSnap.value as String? ?? deviceId)
+        : deviceId;
+
     await FirebaseDatabase.instance
         .ref('devices/$deviceId/members/$requesterUid')
         .set('approved');
@@ -108,7 +229,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
         .set({
       'deviceId': deviceId,
       'addedAt': DateTime.now().toIso8601String(),
-      'name': deviceId,
+      'name': deviceName,
     });
 
     await FirebaseDatabase.instance
@@ -116,14 +237,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
         .set({
       'type': 'access_approved',
       'deviceId': deviceId,
-      'message': 'Your access request for $deviceId has been approved!',
+      'message': 'Your access request for $deviceName has been approved!',
       'read': false,
     });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('$requesterEmail approved for $deviceId'),
+          content: Text('$requesterEmail approved for $deviceName'),
           backgroundColor: Colors.green,
         ),
       );
@@ -151,19 +272,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1B2838),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Access Requests',
-          style: TextStyle(color: Colors.white),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Access Requests',
+            style: TextStyle(color: Colors.white)),
         content: SizedBox(
           width: double.maxFinite,
           child: pendingRequests.isEmpty
-              ? const Text(
-                  'No pending requests',
-                  style: TextStyle(color: Colors.grey),
-                )
+              ? const Text('No pending requests',
+                  style: TextStyle(color: Colors.grey))
               : ListView.builder(
                   shrinkWrap: true,
                   itemCount: pendingRequests.length,
@@ -181,20 +297,16 @@ class _DevicesScreenState extends State<DevicesScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            req['email'] ?? 'Unknown',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          Text(req['email'] ?? 'Unknown',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
                           const SizedBox(height: 4),
                           Text(
                             'Wants access to ${req['deviceId']}',
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 12,
-                            ),
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 12),
                           ),
                           const SizedBox(height: 10),
                           Row(
@@ -203,18 +315,16 @@ class _DevicesScreenState extends State<DevicesScreen> {
                                 child: ElevatedButton(
                                   onPressed: () {
                                     Navigator.pop(context);
-                                    _approveRequest(
-                                      req['deviceId'],
-                                      req['requesterUid'],
-                                      req['email'] ?? '',
-                                    );
+                                    _approveRequest(req['deviceId'],
+                                        req['requesterUid'],
+                                        req['email'] ?? '');
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.green,
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
                                   ),
                                   child: const Text('Approve'),
                                 ),
@@ -224,18 +334,16 @@ class _DevicesScreenState extends State<DevicesScreen> {
                                 child: ElevatedButton(
                                   onPressed: () {
                                     Navigator.pop(context);
-                                    _denyRequest(
-                                      req['deviceId'],
-                                      req['requesterUid'],
-                                      req['email'] ?? '',
-                                    );
+                                    _denyRequest(req['deviceId'],
+                                        req['requesterUid'],
+                                        req['email'] ?? '');
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.red,
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
                                   ),
                                   child: const Text('Deny'),
                                 ),
@@ -274,31 +382,103 @@ class _DevicesScreenState extends State<DevicesScreen> {
         .remove();
   }
 
-  void _showRemoveDialog(String deviceId) {
+  void _showDeviceOptions(String deviceId, String currentName) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1B2838),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remove Device',
-            style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Remove $deviceId from your account?',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(currentName,
+            style: const TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit, color: Colors.blue),
+              title: const Text('Rename Device',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _showRenameDialog(deviceId, currentName);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Remove Device',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                _removeDevice(deviceId);
+                Navigator.pop(context);
+              },
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
+        ],
+      ),
+    );
+  }
+
+  void _showRenameDialog(String deviceId, String currentName) {
+    final controller = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2838),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Rename Device',
+            style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'Device Name',
+            labelStyle:
+                TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.blue, width: 1.5),
+            ),
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: 0.05),
+          ),
+        ),
+        actions: [
           TextButton(
-            onPressed: () {
-              _removeDevice(deviceId);
-              Navigator.pop(context);
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newName = controller.text.trim();
+              if (newName.isEmpty) return;
+              final user = FirebaseAuth.instance.currentUser;
+              if (user != null) {
+                await FirebaseDatabase.instance
+                    .ref('users/${user.uid}/devices/$deviceId/name')
+                    .set(newName);
+                await FirebaseDatabase.instance
+                    .ref('devices/$deviceId/settings/deviceName')
+                    .set(newName);
+              }
+              if (mounted) Navigator.pop(context);
             },
-            child: const Text('Remove', style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -416,26 +596,22 @@ class _DevicesScreenState extends State<DevicesScreen> {
                 borderRadius: BorderRadius.circular(32),
                 border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
               ),
-              child:
-                  const Icon(Icons.sensors_off, size: 56, color: Colors.blue),
+              child: const Icon(Icons.sensors_off, size: 56, color: Colors.blue),
             ),
             const SizedBox(height: 24),
             const Text(
               'No Devices Yet',
               style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white),
             ),
             const SizedBox(height: 8),
             Text(
               'Scan the QR code on your\nMuonix EnvGuard device to get started',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 15,
-              ),
+                  color: Colors.white.withValues(alpha: 0.5), fontSize: 15),
             ),
             const SizedBox(height: 40),
             SizedBox(
@@ -443,17 +619,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
               height: 52,
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.qr_code_scanner),
-                label: const Text(
-                  'Scan QR Code',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                label: const Text('Scan QR Code',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                      borderRadius: BorderRadius.circular(14)),
                   elevation: 0,
                 ),
                 onPressed: _scanQR,
@@ -473,25 +646,22 @@ class _DevicesScreenState extends State<DevicesScreen> {
         final device = devices[index];
         final deviceId = device['deviceId'] ?? '';
         final deviceName = device['name'] ?? deviceId;
+        final online = deviceOnlineStatus[deviceId] ?? false;
 
         return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => DashboardScreen(deviceId: deviceId),
-              ),
-            );
-          },
-          onLongPress: () => _showRemoveDialog(deviceId),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => DashboardScreen(deviceId: deviceId)),
+          ),
+          onLongPress: () => _showDeviceOptions(deviceId, deviceName),
           child: Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(16),
-              border:
-                  Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+              border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
@@ -504,8 +674,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
                     border: Border.all(
                         color: Colors.blue.withValues(alpha: 0.3)),
                   ),
-                  child: const Icon(Icons.sensors,
-                      color: Colors.blue, size: 26),
+                  child: const Icon(Icons.sensors, color: Colors.blue, size: 26),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -521,12 +690,48 @@ class _DevicesScreenState extends State<DevicesScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        deviceId,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          fontSize: 13,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            deviceId,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.4),
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: online
+                                  ? const Color(0xFF00C853)
+                                  : Colors.red,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (online
+                                          ? const Color(0xFF00C853)
+                                          : Colors.red)
+                                      .withValues(alpha: 0.5),
+                                  blurRadius: 4,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            online ? 'Online' : 'Offline',
+                            style: TextStyle(
+                              color: online
+                                  ? const Color(0xFF00C853)
+                                  : Colors.red,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

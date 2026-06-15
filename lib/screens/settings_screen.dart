@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../widgets/contact_us_footer.dart';
 
@@ -16,8 +17,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double minTemp = 18;
   double maxTemp = 35;
   double minHum = 30;
-  double maxHum = 80;
-  double maxGas = 70;
+  double maxHum = 70;
+  double maxGas = 20;
   bool notifyEnabled = true;
   bool isLoading = true;
 
@@ -39,10 +40,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           minTemp = (data['minTemp'] ?? 18).toDouble();
           maxTemp = (data['maxTemp'] ?? 35).toDouble();
           minHum = (data['minHumidity'] ?? 30).toDouble();
-          maxHum = (data['maxHumidity'] ?? 80).toDouble();
-          maxGas = (data['maxGas'] ?? 70).toDouble();
+          maxHum = (data['maxHumidity'] ?? 70).toDouble();
+          maxGas = (data['maxGas'] ?? 20).toDouble();
           notifyEnabled = data['notifyEnabled'] ?? true;
-          _deviceNameController.text = data['deviceName'] ?? 'My SensorBox';
+          _deviceNameController.text = data['deviceName'] ?? widget.deviceId;
           isLoading = false;
         });
       } else {
@@ -51,25 +52,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
-  void _saveSettings() {
-    _settingsRef.update({
+  Future<void> _saveSettings() async {
+    final newName = _deviceNameController.text.trim();
+
+    await _settingsRef.update({
       'minTemp': minTemp,
       'maxTemp': maxTemp,
       'minHumidity': minHum,
       'maxHumidity': maxHum,
       'maxGas': maxGas,
       'notifyEnabled': notifyEnabled,
-      'deviceName': _deviceNameController.text.trim(),
-    }).then((_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Settings saved!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      'deviceName': newName,
     });
+
+    // Sync name to user's device list so devices_screen updates too
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await FirebaseDatabase.instance
+          .ref('users/${user.uid}/devices/${widget.deviceId}/name')
+          .set(newName);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Settings saved!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   @override
@@ -307,10 +318,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 minTemp = 18;
                                 maxTemp = 35;
                                 minHum = 30;
-                                maxHum = 80;
-                                maxGas = 70;
+                                maxHum = 70;
+                                maxGas = 20;
                                 notifyEnabled = true;
-                                _deviceNameController.text = 'My SensorBox';
+                                _deviceNameController.text = widget.deviceId;
                               });
                             },
                           ),

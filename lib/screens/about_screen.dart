@@ -99,7 +99,7 @@ class AboutScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Muonix EnvGuard is an industrial IoT environment monitoring system that provides real-time temperature, humidity and gas level tracking with instant alerts when values exceed safe ranges.',
+                          'Muonix EnvGuard is an industrial IoT environment monitoring system that provides real-time temperature, humidity and gas level tracking with instant alerts when values exceed safe ranges. Designed for warehouses, factories, and industrial spaces, it supports multiple devices and multiple users with owner-controlled access.',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.5),
                             fontSize: 13,
@@ -126,12 +126,43 @@ class AboutScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
                         _buildFeatureRow(Icons.thermostat, 'Real-time temperature monitoring'),
-                        _buildFeatureRow(Icons.water_drop, 'Humidity tracking'),
-                        _buildFeatureRow(Icons.air, 'Gas leak detection (MQ-6)'),
-                        _buildFeatureRow(Icons.notifications, 'Instant alert notifications'),
-                        _buildFeatureRow(Icons.history, 'Data history with date filter'),
+                        _buildFeatureRow(Icons.water_drop, 'Real-time humidity tracking'),
+                        _buildFeatureRow(Icons.air, 'Gas leak detection (MQ-6 sensor)'),
+                        _buildFeatureRow(Icons.notifications_active, 'Instant sensor alert notifications'),
+                        _buildFeatureRow(Icons.wifi_off, 'Device online / offline notifications'),
+                        _buildFeatureRow(Icons.history, 'Sensor data history with date filter'),
                         _buildFeatureRow(Icons.qr_code_scanner, 'QR code device pairing'),
                         _buildFeatureRow(Icons.devices, 'Multiple device support'),
+                        _buildFeatureRow(Icons.group, 'Multi-user access with owner approval'),
+                        _buildFeatureRow(Icons.edit, 'Custom device naming per user'),
+                        _buildFeatureRow(Icons.tune, 'Configurable safe range thresholds'),
+                        _buildFeatureRow(Icons.hourglass_top, 'Sensor warmup indicator'),
+                        _buildFeatureRow(Icons.wifi, 'Auto WiFi reconnect (WiFiManager)'),
+                        _buildFeatureRow(Icons.fingerprint, 'MAC address-based device identity'),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  _buildCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Hardware',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildFeatureRow(Icons.developer_board, 'NodeMCU ESP8266 microcontroller'),
+                        _buildFeatureRow(Icons.thermostat, 'DHT11 temperature & humidity sensor'),
+                        _buildFeatureRow(Icons.sensors, 'MQ-6 gas sensor (LPG / propane detection)'),
+                        _buildFeatureRow(Icons.cloud, 'Firebase Realtime Database integration'),
+                        _buildFeatureRow(Icons.update, 'Sensor readings every 5 seconds'),
                       ],
                     ),
                   ),
@@ -264,11 +295,13 @@ class AboutScreen extends StatelessWidget {
         children: [
           Icon(icon, color: Colors.blue, size: 16),
           const SizedBox(width: 10),
-          Text(
-            text,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontSize: 13,
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 13,
+              ),
             ),
           ),
         ],

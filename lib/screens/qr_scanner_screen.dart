@@ -37,35 +37,19 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           .get();
 
       if (!ownerSnap.exists) {
-        // No owner — this user becomes the owner
-        await _addAsOwner(user, code);
+        await _askNameThenAdd(user, code, isOwner: true, ownerUid: null);
       } else {
         final ownerUid = ownerSnap.value as String;
-
         if (ownerUid == user.uid) {
-          // Already the owner — just add to device list
-          await _addToUserDeviceList(user, code, 'owner');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Device $code added!'),
-                backgroundColor: Colors.green,
-              ),
-            );
-            Navigator.pop(context, code);
-          }
+          await _askNameThenAdd(user, code, isOwner: true, ownerUid: ownerUid);
         } else {
-          // Someone else owns it — send access request
           await _sendAccessRequest(user, code, ownerUid);
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
         setState(() {
           isScanned = false;
@@ -76,8 +60,104 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     }
   }
 
-  Future<void> _addAsOwner(User user, String deviceId) async {
-    await _addToUserDeviceList(user, deviceId, 'owner');
+  // Show name dialog before adding device
+  Future<void> _askNameThenAdd(User user, String deviceId,
+      {required bool isOwner, String? ownerUid}) async {
+    setState(() => isLoading = false);
+
+    final nameController = TextEditingController(text: deviceId);
+
+    final name = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2838),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Name Your Device',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.sensors, color: Colors.blue, size: 40),
+            const SizedBox(height: 16),
+            Text(
+              'Give a name to this device so you can identify it easily.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Device Name',
+                labelStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                hintText: 'e.g. Warehouse Unit 1',
+                hintStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                prefixIcon: const Icon(Icons.edit, color: Colors.blue),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: Colors.blue, width: 1.5),
+                ),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.05),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, deviceId),
+            child:
+                const Text('Skip', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final n = nameController.text.trim();
+              Navigator.pop(context, n.isEmpty ? deviceId : n);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    final finalName = name ?? deviceId;
+
+    if (isOwner && ownerUid == null) {
+      await _addAsOwner(user, deviceId, finalName);
+    } else {
+      await _addToUserDeviceList(user, deviceId, 'owner', finalName);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Device $finalName added!'),
+              backgroundColor: Colors.green),
+        );
+        Navigator.pop(context, deviceId);
+      }
+    }
+  }
+
+  Future<void> _addAsOwner(User user, String deviceId, String name) async {
+    await _addToUserDeviceList(user, deviceId, 'owner', name);
 
     await FirebaseDatabase.instance
         .ref('devices/$deviceId/meta/owner_uid')
@@ -90,7 +170,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Device $deviceId added! You are the owner.'),
+          content: Text('$name added! You are the owner.'),
           backgroundColor: Colors.green,
         ),
       );
@@ -99,23 +179,21 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   }
 
   Future<void> _addToUserDeviceList(
-      User user, String deviceId, String role) async {
+      User user, String deviceId, String role, String name) async {
     await FirebaseDatabase.instance
         .ref('users/${user.uid}/devices/$deviceId')
         .set({
       'deviceId': deviceId,
       'addedAt': DateTime.now().toIso8601String(),
-      'name': deviceId,
+      'name': name,
       'role': role,
     });
   }
 
   Future<void> _sendAccessRequest(
       User user, String deviceId, String ownerUid) async {
-    // Add device to guest's list with pending role
-    await _addToUserDeviceList(user, deviceId, 'pending');
+    await _addToUserDeviceList(user, deviceId, 'pending', deviceId);
 
-    // Write request under the device
     await FirebaseDatabase.instance
         .ref('devices/$deviceId/requests/${user.uid}')
         .set({
@@ -125,7 +203,6 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       'status': 'pending',
     });
 
-    // Notify owner
     await FirebaseDatabase.instance
         .ref('users/$ownerUid/notifications/${user.uid}_$deviceId')
         .set({
@@ -168,8 +245,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                 Navigator.pop(context);
                 Navigator.pop(context, deviceId);
               },
-              child:
-                  const Text('OK', style: TextStyle(color: Colors.orange)),
+              child: const Text('OK',
+                  style: TextStyle(color: Colors.orange)),
             ),
           ],
         ),
@@ -206,9 +283,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
             onDetect: _onDetect,
           ),
           Container(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.5),
-            ),
+            decoration:
+                BoxDecoration(color: Colors.black.withValues(alpha: 0.5)),
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,

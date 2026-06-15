@@ -52,7 +52,7 @@ class MyApp extends StatelessWidget {
             if (!user.emailVerified) {
               return _VerifyEmailScreen(user: user);
             }
-            return const DevicesScreen();
+            return DevicesScreen();
           }
           return const LoginScreen();
         },
@@ -73,34 +73,33 @@ class _VerifyEmailScreenState extends State<_VerifyEmailScreen> {
   bool _isChecking = false;
 
   Future<void> _checkVerification() async {
-  setState(() => _isChecking = true);
-  try {
-    await FirebaseAuth.instance.currentUser?.reload();
-    final updatedUser = FirebaseAuth.instance.currentUser;
-    if (updatedUser != null && updatedUser.emailVerified) {
-      // Will auto navigate via authStateChanges
-    } else {
-      // Not verified yet — sign out and go back to login
-      await FirebaseAuth.instance.signOut();
+    setState(() => _isChecking = true);
+    try {
+      await FirebaseAuth.instance.currentUser?.reload();
+      final updatedUser = FirebaseAuth.instance.currentUser;
+      if (updatedUser != null && updatedUser.emailVerified) {
+        // Will auto navigate via authStateChanges
+      } else {
+        await FirebaseAuth.instance.signOut();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Email not verified yet. Please verify and login again.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Email not verified yet. Please verify and login again.'),
-            backgroundColor: Colors.orange,
-          ),
+          SnackBar(content: Text('Error: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isChecking = false);
     }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    }
-  } finally {
-    if (mounted) setState(() => _isChecking = false);
   }
-}
 
   @override
   Widget build(BuildContext context) {

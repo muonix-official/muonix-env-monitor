@@ -51,7 +51,7 @@ class NotificationService {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       await FirebaseDatabase.instance
-          .ref('devices/BOX-000001/meta/fcm_token')
+          .ref('users/${user.uid}/fcm_token')
           .set(token);
     }
   }
@@ -72,31 +72,34 @@ class NotificationService {
     final NotificationDetails details =
         NotificationDetails(android: androidDetails);
 
-    await _localNotifications.show(0, title, body, details);
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title,
+      body,
+      details,
+    );
   }
 
   static Future<void> showAlertNotification(
-      double temp, double humidity, {bool gasDetected = false}) async {
-    
+      double temp, double humidity,
+      {bool gasDetected = false,
+      String deviceName = 'Device'}) async {
+
     String body;
 
     if (gasDetected && temp == 0 && humidity == 0) {
-      // Only gas alert
       body = '⚠️ Gas detected by MQ-6 sensor!';
     } else if (gasDetected) {
-      // Gas + temp/humidity alert
       body = 'Temp: ${temp.toStringAsFixed(1)}°C, '
           'Humidity: ${humidity.toStringAsFixed(1)}%, '
           'Gas: DETECTED!';
     } else {
-      // Only temp/humidity alert
-      body = 'Unsafe conditions! '
-          'Temp: ${temp.toStringAsFixed(1)}°C, '
+      body = 'Temp: ${temp.toStringAsFixed(1)}°C, '
           'Humidity: ${humidity.toStringAsFixed(1)}%';
     }
 
     await showLocalNotification(
-      '⚠️ SensorBox Alert!',
+      '⚠️ Alert: $deviceName',
       body,
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -22,14 +23,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool alert = false;
   bool isLoading = true;
   bool accessDenied = false;
+  bool isOnline = false;
+  bool isWarmingUp = false;
   String _accessStatus = '';
   String lastUpdated = '';
+  String deviceName = '';
+  String _lastTs = '';
+  Timer? _onlineCheckTimer;
 
   double minTemp = 18;
   double maxTemp = 35;
   double minHum = 30;
-  double maxHum = 80;
-  double maxGas = 70;
+  double maxHum = 70;
+  double maxGas = 20;
+
+  bool _settingsLoaded = false;
 
   late DatabaseReference _liveRef;
   late DatabaseReference _settingsRef;
@@ -40,6 +48,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _liveRef = FirebaseDatabase.instance.ref('devices/${widget.deviceId}/live');
     _settingsRef = FirebaseDatabase.instance.ref('devices/${widget.deviceId}/settings');
     _checkAccessThenLoad();
+    _onlineCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) {
+        setState(() {
+          isOnline = _checkIsOnline(_lastTs);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _onlineCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  bool _checkIsOnline(String? ts) {
+    if (ts == null || ts.isEmpty) return false;
+    try {
+      final lastSeen = DateTime.parse(ts).toUtc();
+      final diff = DateTime.now().toUtc().difference(lastSeen).inSeconds;
+      return diff >= 0 && diff < 30;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _checkAccessThenLoad() async {
@@ -68,8 +100,131 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
+    await _loadSettingsFirst();
     _listenToData();
-    _loadSettings();
+    _listenToSettings();
+  }
+
+  Future<void> _loadSettingsFirst() async {
+    try {
+      final snap = await _settingsRef.get();
+      final data = snap.value as Map?;
+      if (data != null && mounted) {
+        setState(() {
+          deviceName = data['deviceName'] ?? widget.deviceId;
+          minTemp = (data['minTemp'] ?? 18).toDouble();
+          maxTemp = (data['maxTemp'] ?? 35).toDouble();
+          minHum = (data['minHumidity'] ?? 30).toDouble();
+          maxHum = (data['maxHumidity'] ?? 70).toDouble();
+          maxGas = (data['maxGas'] ?? 20).toDouble();
+          _settingsLoaded = true;
+        });
+      } else {
+        await _settingsRef.set({
+          'minTemp': 18,
+          'maxTemp': 35,
+          'minHumidity': 30,
+          'maxHumidity': 70,
+          'maxGas': 20,
+          'notifyEnabled': true,
+          'deviceName': widget.deviceId,
+        });
+        if (mounted) {
+          setState(() {
+            deviceName = widget.deviceId;
+            minTemp = 18;
+            maxTemp = 35;
+            minHum = 30;
+            maxHum = 70;
+            maxGas = 20;
+            _settingsLoaded = true;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) setState(() => _settingsLoaded = true);
+    }
+  }
+
+  void _listenToSettings() {
+    _settingsRef.onValue.listen((event) {
+      final data = event.snapshot.value as Map?;
+      if (data != null && mounted) {
+        setState(() {
+          deviceName = data['deviceName'] ?? widget.deviceId;
+          minTemp = (data['minTemp'] ?? 18).toDouble();
+          maxTemp = (data['maxTemp'] ?? 35).toDouble();
+          minHum = (data['minHumidity'] ?? 30).toDouble();
+          maxHum = (data['maxHumidity'] ?? 70).toDouble();
+          maxGas = (data['maxGas'] ?? 20).toDouble();
+        });
+        _recalculateAlert();
+      }
+    });
+  }
+
+  void _recalculateAlert() {
+    if (isWarmingUp) return;
+    bool newAlert = (temp < minTemp ||
+        temp > maxTemp ||
+        humidity < minHum ||
+        humidity > maxHum ||
+        gasAlert);
+    if (mounted) setState(() => alert = newAlert);
+  }
+
+  void _listenToData() {
+    _liveRef.onValue.listen((event) {
+      final data = event.snapshot.value as Map?;
+      if (mounted) {
+        if (data != null) {
+          double currentTemp = (data['temp'] ?? 0).toDouble();
+          double currentHum = (data['humidity'] ?? 0).toDouble();
+          double currentGas = (data['gasLevel'] ?? 0).toDouble();
+          bool currentGasAlert = data['gasAlert'] ?? false;
+          bool currentWarmingUp = data['warmingUp'] ?? false;
+          String ts = data['ts'] ?? '';
+
+          // Only calculate alert if not warming up
+          bool newAlert = currentWarmingUp
+              ? false
+              : (currentTemp < minTemp ||
+                  currentTemp > maxTemp ||
+                  currentHum < minHum ||
+                  currentHum > maxHum ||
+                  currentGasAlert);
+
+          if (newAlert && !alert && _settingsLoaded && !currentWarmingUp) {
+            NotificationService.showAlertNotification(
+              currentTemp,
+              currentHum,
+              gasDetected: currentGasAlert,
+              deviceName: deviceName.isNotEmpty ? deviceName : widget.deviceId,
+            );
+          }
+
+          final now = TimeOfDay.now();
+          setState(() {
+            temp = currentTemp;
+            humidity = currentHum;
+            gasLevel = currentGas;
+            gasAlert = currentGasAlert;
+            alert = newAlert;
+            isWarmingUp = currentWarmingUp;
+            _lastTs = ts;
+            isOnline = _checkIsOnline(ts);
+            isLoading = false;
+            lastUpdated =
+                'Updated at ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+          });
+        } else {
+          setState(() {
+            isLoading = false;
+            isOnline = false;
+          });
+        }
+      }
+    });
   }
 
   Future<void> _sendAccessRequest() async {
@@ -125,86 +280,122 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _listenToData() {
-    _liveRef.onValue.listen((event) {
-      final data = event.snapshot.value as Map?;
-      if (data != null && mounted) {
-        bool newAlert = data['alert'] ?? false;
-
-        if (newAlert && !alert) {
-          NotificationService.showAlertNotification(
-            (data['temp'] ?? 0).toDouble(),
-            (data['humidity'] ?? 0).toDouble(),
-            gasDetected: data['gasAlert'] ?? false,
-          );
-        }
-
-        final now = TimeOfDay.now();
-        setState(() {
-          temp = (data['temp'] ?? 0).toDouble();
-          humidity = (data['humidity'] ?? 0).toDouble();
-          gasLevel = (data['gasLevel'] ?? 0).toDouble();
-          gasAlert = data['gasAlert'] ?? false;
-          alert = newAlert;
-          isLoading = false;
-          lastUpdated =
-              'Updated at ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-        });
-      }
-    });
-  }
-
-  void _loadSettings() {
-    _settingsRef.onValue.listen((event) {
-      final data = event.snapshot.value as Map?;
-      if (data != null && mounted) {
-        setState(() {
-          minTemp = (data['minTemp'] ?? 18).toDouble();
-          maxTemp = (data['maxTemp'] ?? 35).toDouble();
-          minHum = (data['minHumidity'] ?? 30).toDouble();
-          maxHum = (data['maxHumidity'] ?? 80).toDouble();
-          maxGas = (data['maxGas'] ?? 70).toDouble();
-        });
-      }
-    });
-  }
-
   Color _getTempColor() {
+    if (isWarmingUp) return Colors.orange;
     if (temp < minTemp || temp > maxTemp) return Colors.red;
     if (temp > maxTemp - 3 || temp < minTemp + 3) return Colors.orange;
     return const Color(0xFF00C853);
   }
 
   Color _getHumColor() {
+    if (isWarmingUp) return Colors.orange;
     if (humidity < minHum || humidity > maxHum) return Colors.red;
     if (humidity > maxHum - 5 || humidity < minHum + 5) return Colors.orange;
     return Colors.blue;
   }
 
   Color _getGasColor() {
+    if (isWarmingUp) return Colors.orange;
     if (gasAlert || gasLevel > maxGas) return Colors.red;
-    if (gasLevel > maxGas * 0.75) return Colors.orange;
+    if (gasLevel > maxGas * 0.5) return Colors.orange;
     return const Color(0xFF00C853);
+  }
+
+  Widget _buildOnlineBadge() {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: isOnline ? const Color(0xFF00C853) : Colors.red,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: (isOnline ? const Color(0xFF00C853) : Colors.red)
+                    .withValues(alpha: 0.6),
+                blurRadius: 4,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          isOnline ? 'Online' : 'Offline',
+          style: TextStyle(
+            color: isOnline ? const Color(0xFF00C853) : Colors.red,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWarmupBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              color: Colors.orange,
+              strokeWidth: 2,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '🔥 Sensor Warming Up...',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Gas sensor needs ~30 sec to stabilize. Readings and alerts will begin shortly.',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Loading screen
     if (isLoading) {
       return Scaffold(
         backgroundColor: const Color(0xFF0D1B2A),
         body: Column(
           children: [
-            const Expanded(
-              child: Center(child: CircularProgressIndicator()),
-            ),
+            const Expanded(child: Center(child: CircularProgressIndicator())),
             const ContactUsFooter(),
           ],
         ),
       );
     }
 
-    // Access denied screen
     if (accessDenied) {
       return Scaffold(
         backgroundColor: const Color(0xFF0D1B2A),
@@ -314,7 +505,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    // Main dashboard
     return Scaffold(
       backgroundColor: const Color(0xFF0D1B2A),
       appBar: AppBar(
@@ -327,20 +517,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Dashboard',
-              style: TextStyle(
+            Text(
+              deviceName.isNotEmpty ? deviceName : widget.deviceId,
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
               ),
             ),
-            Text(
-              widget.deviceId,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 12,
-              ),
+            Row(
+              children: [
+                Text(
+                  widget.deviceId,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildOnlineBadge(),
+              ],
             ),
           ],
         ),
@@ -372,7 +568,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  if (alert)
+                  // Warmup banner — shown instead of alert banner during warmup
+                  if (isWarmingUp) _buildWarmupBanner(),
+
+                  if (!isWarmingUp && alert)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
@@ -401,34 +600,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ],
                       ),
                     ),
+
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: alert
+                        colors: isWarmingUp
                             ? [
-                                Colors.red.withValues(alpha: 0.2),
-                                Colors.red.withValues(alpha: 0.05),
+                                Colors.orange.withValues(alpha: 0.2),
+                                Colors.orange.withValues(alpha: 0.05),
                               ]
-                            : [
-                                const Color(0xFF00C853).withValues(alpha: 0.2),
-                                const Color(0xFF00C853).withValues(alpha: 0.05),
-                              ],
+                            : alert
+                                ? [
+                                    Colors.red.withValues(alpha: 0.2),
+                                    Colors.red.withValues(alpha: 0.05),
+                                  ]
+                                : [
+                                    const Color(0xFF00C853).withValues(alpha: 0.2),
+                                    const Color(0xFF00C853).withValues(alpha: 0.05),
+                                  ],
                       ),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: alert
-                            ? Colors.red.withValues(alpha: 0.4)
-                            : const Color(0xFF00C853).withValues(alpha: 0.4),
+                        color: isWarmingUp
+                            ? Colors.orange.withValues(alpha: 0.4)
+                            : alert
+                                ? Colors.red.withValues(alpha: 0.4)
+                                : const Color(0xFF00C853).withValues(alpha: 0.4),
                       ),
                     ),
                     child: Row(
                       children: [
                         Icon(
-                          alert ? Icons.dangerous : Icons.check_circle,
-                          color: alert ? Colors.red : const Color(0xFF00C853),
+                          isWarmingUp
+                              ? Icons.hourglass_top
+                              : alert
+                                  ? Icons.dangerous
+                                  : Icons.check_circle,
+                          color: isWarmingUp
+                              ? Colors.orange
+                              : alert
+                                  ? Colors.red
+                                  : const Color(0xFF00C853),
                           size: 36,
                         ),
                         const SizedBox(width: 14),
@@ -437,13 +652,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                alert ? 'UNSAFE CONDITIONS' : 'ALL SAFE',
+                                isWarmingUp
+                                    ? 'WARMING UP'
+                                    : alert
+                                        ? 'UNSAFE CONDITIONS'
+                                        : 'ALL SAFE',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: alert
-                                      ? Colors.red
-                                      : const Color(0xFF00C853),
+                                  color: isWarmingUp
+                                      ? Colors.orange
+                                      : alert
+                                          ? Colors.red
+                                          : const Color(0xFF00C853),
                                 ),
                               ),
                               if (lastUpdated.isNotEmpty)
@@ -461,13 +682,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           width: 10,
                           height: 10,
                           decoration: BoxDecoration(
-                            color: alert ? Colors.red : const Color(0xFF00C853),
+                            color: isWarmingUp
+                                ? Colors.orange
+                                : alert
+                                    ? Colors.red
+                                    : const Color(0xFF00C853),
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: (alert
-                                        ? Colors.red
-                                        : const Color(0xFF00C853))
+                                color: (isWarmingUp
+                                        ? Colors.orange
+                                        : alert
+                                            ? Colors.red
+                                            : const Color(0xFF00C853))
                                     .withValues(alpha: 0.6),
                                 blurRadius: 8,
                                 spreadRadius: 2,
@@ -478,6 +705,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                   ),
+
                   _buildSensorCard(
                     title: 'Temperature',
                     value: temp.toStringAsFixed(1),
@@ -485,8 +713,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     icon: Icons.thermostat,
                     color: _getTempColor(),
                     subtitle: 'Safe: ${minTemp.toInt()}°C — ${maxTemp.toInt()}°C',
-                    progress:
-                        ((temp - minTemp) / (maxTemp - minTemp)).clamp(0.0, 1.0),
+                    progress: ((temp - minTemp) / (maxTemp - minTemp)).clamp(0.0, 1.0),
                   ),
                   const SizedBox(height: 12),
                   _buildSensorCard(
@@ -547,43 +774,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     Text(
-                      'Safe: below ${maxGas.toInt()}%',
+                      isWarmingUp ? 'Warming up...' : 'Safe: below ${maxGas.toInt()}%',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.35),
+                        color: isWarmingUp
+                            ? Colors.orange.withValues(alpha: 0.8)
+                            : Colors.white.withValues(alpha: 0.35),
                         fontSize: 11,
                       ),
                     ),
                   ],
                 ),
               ),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: gasLevel.toStringAsFixed(1),
+              isWarmingUp
+                  ? const Text(
+                      '—',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
-                        color: color,
+                        color: Colors.orange,
+                      ),
+                    )
+                  : RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: gasLevel.toStringAsFixed(1),
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                              color: color,
+                            ),
+                          ),
+                          TextSpan(
+                            text: '%',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: color.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    TextSpan(
-                      text: '%',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: color.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 14),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: (gasLevel / 100).clamp(0.0, 1.0),
+              value: isWarmingUp ? null : (gasLevel / 100).clamp(0.0, 1.0),
               backgroundColor: Colors.white.withValues(alpha: 0.08),
               valueColor: AlwaysStoppedAnimation<Color>(color),
               minHeight: 6,
