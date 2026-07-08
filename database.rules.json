@@ -1,0 +1,36 @@
+{
+  "rules": {
+    "faqs": {
+      ".read": true,
+      ".write": false
+    },
+    "devices": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+      "$deviceId": {
+        "meta": { ".read": "auth != null", ".write": "auth != null" },
+        "members": { ".read": "auth != null", ".write": "auth != null" },
+        "requests": { ".read": "auth != null", ".write": "auth != null" },
+        "live": { ".read": "auth != null", ".write": true },
+        "history": { ".read": "auth != null", ".write": true },
+        "settings": { ".read": "auth != null", ".write": "auth != null" }
+      }
+    },
+    "users": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      "$uid": {
+        ".read": "$uid === auth.uid || root.child('admins').child(auth.uid).exists()",
+        ".write": "$uid === auth.uid",
+        "notifications": { ".write": "auth != null" }
+      }
+    },
+    "admins": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      ".write": false
+    },
+    "adminLogs": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      ".write": "auth != null"
+    }
+  }
+}

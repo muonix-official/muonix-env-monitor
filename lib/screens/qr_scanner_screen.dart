@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'dashboard_screen.dart';
+import 'relay_dashboard_screen.dart';
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
@@ -11,308 +13,302 @@ class QrScannerScreen extends StatefulWidget {
 }
 
 class _QrScannerScreenState extends State<QrScannerScreen> {
-  MobileScannerController cameraController = MobileScannerController();
-  bool isScanned = false;
-  bool isLoading = false;
-
-  Future<void> _onDetect(BarcodeCapture capture) async {
-    if (isScanned) return;
-    final barcode = capture.barcodes.first;
-    final code = barcode.rawValue;
-    if (code == null) return;
-
-    setState(() {
-      isScanned = true;
-      isLoading = true;
-    });
-
-    cameraController.stop();
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final ownerSnap = await FirebaseDatabase.instance
-          .ref('devices/$code/meta/owner_uid')
-          .get();
-
-      if (!ownerSnap.exists) {
-        await _askNameThenAdd(user, code, isOwner: true, ownerUid: null);
-      } else {
-        final ownerUid = ownerSnap.value as String;
-        if (ownerUid == user.uid) {
-          await _askNameThenAdd(user, code, isOwner: true, ownerUid: ownerUid);
-        } else {
-          await _sendAccessRequest(user, code, ownerUid);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-        setState(() {
-          isScanned = false;
-          isLoading = false;
-        });
-        cameraController.start();
-      }
-    }
-  }
-
-  // Show name dialog before adding device
-  Future<void> _askNameThenAdd(User user, String deviceId,
-      {required bool isOwner, String? ownerUid}) async {
-    setState(() => isLoading = false);
-
-    final nameController = TextEditingController(text: deviceId);
-
-    final name = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1B2838),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Name Your Device',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.sensors, color: Colors.blue, size: 40),
-            const SizedBox(height: 16),
-            Text(
-              'Give a name to this device so you can identify it easily.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Device Name',
-                labelStyle:
-                    TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-                hintText: 'e.g. Warehouse Unit 1',
-                hintStyle:
-                    TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-                prefixIcon: const Icon(Icons.edit, color: Colors.blue),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: Colors.blue, width: 1.5),
-                ),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, deviceId),
-            child:
-                const Text('Skip', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final n = nameController.text.trim();
-              Navigator.pop(context, n.isEmpty ? deviceId : n);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('Save', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    final finalName = name ?? deviceId;
-
-    if (isOwner && ownerUid == null) {
-      await _addAsOwner(user, deviceId, finalName);
-    } else {
-      await _addToUserDeviceList(user, deviceId, 'owner', finalName);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Device $finalName added!'),
-              backgroundColor: Colors.green),
-        );
-        Navigator.pop(context, deviceId);
-      }
-    }
-  }
-
-  Future<void> _addAsOwner(User user, String deviceId, String name) async {
-    await _addToUserDeviceList(user, deviceId, 'owner', name);
-
-    await FirebaseDatabase.instance
-        .ref('devices/$deviceId/meta/owner_uid')
-        .set(user.uid);
-
-    await FirebaseDatabase.instance
-        .ref('devices/$deviceId/members/${user.uid}')
-        .set('approved');
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$name added! You are the owner.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.pop(context, deviceId);
-    }
-  }
-
-  Future<void> _addToUserDeviceList(
-      User user, String deviceId, String role, String name) async {
-    await FirebaseDatabase.instance
-        .ref('users/${user.uid}/devices/$deviceId')
-        .set({
-      'deviceId': deviceId,
-      'addedAt': DateTime.now().toIso8601String(),
-      'name': name,
-      'role': role,
-    });
-  }
-
-  Future<void> _sendAccessRequest(
-      User user, String deviceId, String ownerUid) async {
-    await _addToUserDeviceList(user, deviceId, 'pending', deviceId);
-
-    await FirebaseDatabase.instance
-        .ref('devices/$deviceId/requests/${user.uid}')
-        .set({
-      'uid': user.uid,
-      'email': user.email,
-      'requestedAt': DateTime.now().toIso8601String(),
-      'status': 'pending',
-    });
-
-    await FirebaseDatabase.instance
-        .ref('users/$ownerUid/notifications/${user.uid}_$deviceId')
-        .set({
-      'type': 'access_request',
-      'deviceId': deviceId,
-      'requesterUid': user.uid,
-      'requesterEmail': user.email,
-      'requestedAt': DateTime.now().toIso8601String(),
-      'read': false,
-    });
-
-    if (mounted) {
-      setState(() => isLoading = false);
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF1B2838),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Access Requested',
-              style: TextStyle(color: Colors.white)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.pending_actions,
-                  color: Colors.orange, size: 48),
-              const SizedBox(height: 16),
-              Text(
-                'Your access request has been sent to the owner.\n\nThe device will appear in your list. Tap it to check your request status.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7), height: 1.5),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context, deviceId);
-              },
-              child: const Text('OK',
-                  style: TextStyle(color: Colors.orange)),
-            ),
-          ],
-        ),
-      );
-    }
-  }
+  bool _processing = false;
+  final MobileScannerController _controller = MobileScannerController();
 
   @override
   void dispose() {
-    cameraController.dispose();
+    _controller.dispose();
     super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_processing) return;
+    final raw = capture.barcodes.firstOrNull?.rawValue;
+    if (raw == null || raw.trim().isEmpty) return;
+    _processing = true;
+    if (mounted) setState(() {});
+    _handleQr(raw.trim());
+  }
+
+  void _done() {
+    _processing = false;
+    if (mounted) setState(() {});
+  }
+
+  String? _extractDeviceId(String raw) {
+    final upper = raw.toUpperCase();
+    for (final prefix in ['BOX-', 'REL-']) {
+      final idx = upper.lastIndexOf(prefix);
+      if (idx != -1) {
+        return raw.substring(idx).trim().replaceAll(RegExp(r'\s+'), '');
+      }
+    }
+    return null;
+  }
+
+  Future<void> _handleQr(String raw) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) { _done(); return; }
+
+    final deviceId = _extractDeviceId(raw);
+    if (deviceId == null) {
+      _done();
+      _showSnack('Invalid QR code. Scanned: "$raw"');
+      return;
+    }
+
+    final upper = deviceId.toUpperCase();
+    final String deviceType;
+    if (upper.startsWith('BOX-')) {
+      deviceType = 'sensor';
+    } else if (upper.startsWith('REL-')) {
+      deviceType = 'relay';
+    } else {
+      _done();
+      _showSnack('Invalid QR code. Scanned: "$raw"');
+      return;
+    }
+
+    try {
+      final db = FirebaseDatabase.instance;
+
+      // Read meta — allowed for any auth != null user
+      final metaSnap = await db.ref('devices/$deviceId/meta').get();
+      final meta = metaSnap.value as Map?;
+      final ownerUid = meta?['owner_uid']?.toString();
+      // Store owner email in meta so we never need to read another user's node
+      final ownerEmail = meta?['owner_email']?.toString() ?? 'the owner';
+
+      if (ownerUid == null || ownerUid.isEmpty) {
+        // No owner — become owner
+        await _addAsOwner(deviceId, deviceType, user, db);
+        return;
+      }
+
+      if (ownerUid == user.uid) {
+        // Already owner — just open dashboard
+        await _addAsOwner(deviceId, deviceType, user, db);
+        return;
+      }
+
+      // Someone else owns it — send request
+      // We no longer read users/$ownerUid (permission denied risk)
+      // Owner email comes from devices/$deviceId/meta/owner_email
+      await _sendAccessRequest(
+          deviceId, deviceType, user, db, ownerUid, ownerEmail);
+    } catch (e) {
+      _done();
+      _showSnack('Error: $e');
+    }
+  }
+
+  Future<void> _addAsOwner(
+    String deviceId,
+    String deviceType,
+    User user,
+    FirebaseDatabase db,
+  ) async {
+    await db.ref('devices/$deviceId/blocked').remove();
+
+    // Store owner_email in meta so other users can see who owns the device
+    // without needing to read the users/ node
+    await db.ref('devices/$deviceId/meta').update({
+      'owner_uid': user.uid,
+      'owner_email': user.email ?? '',
+      'type': deviceType,
+    });
+
+    await db.ref('users/${user.uid}/devices/$deviceId').set({
+      'deviceId': deviceId,
+      'name': deviceId,
+      'role': 'owner',
+      'addedAt': ServerValue.timestamp,
+      'type': deviceType,
+    });
+
+    await db.ref('devices/$deviceId/members/${user.uid}').set('approved');
+
+    // Record the owner's own email under memberInfo too. account_management
+    // and any other screen that lists all members (owner included) reads
+    // emails from here — without this the owner would show up by uid
+    // instead of email whenever a full member list is displayed.
+    await db
+        .ref('devices/$deviceId/memberInfo/${user.uid}/email')
+        .set(user.email ?? '');
+
+    _done();
+    if (!mounted) return;
+    _navigateToDashboard(deviceId, deviceType);
+  }
+
+  Future<void> _sendAccessRequest(
+    String deviceId,
+    String deviceType,
+    User user,
+    FirebaseDatabase db,
+    String ownerUid,
+    String ownerEmail,
+  ) async {
+    // Already an approved member — just open dashboard
+    final memberSnap =
+        await db.ref('devices/$deviceId/members/${user.uid}').get();
+    if (memberSnap.exists) {
+      _done();
+      if (!mounted) return;
+      _navigateToDashboard(deviceId, deviceType);
+      return;
+    }
+
+    // Get device name from settings (allowed by rules)
+    final nameSnap =
+        await db.ref('devices/$deviceId/settings/deviceName').get();
+    final deviceName =
+        nameSnap.exists ? (nameSnap.value as String? ?? deviceId) : deviceId;
+
+    // Check if request already exists
+    final reqSnap =
+        await db.ref('devices/$deviceId/requests/${user.uid}').get();
+    if (reqSnap.exists) {
+      final status =
+          (reqSnap.value as Map?)?['status']?.toString() ?? 'pending';
+      if (status == 'pending') {
+        await _addPendingDeviceToUserList(
+            deviceId, deviceName, deviceType, ownerEmail, user, db);
+        _done();
+        if (!mounted) return;
+        _showSnack('Request already sent to $ownerEmail.');
+        Navigator.pop(context);
+        return;
+      }
+    }
+
+    // Write access request under device (allowed: requests write = auth != null)
+    await db.ref('devices/$deviceId/requests/${user.uid}').set({
+      'uid': user.uid,
+      'email': user.email ?? '',
+      'requestedAt': ServerValue.timestamp,
+      'status': 'pending',
+    });
+
+    // Notify owner (allowed: users/$uid/notifications write = auth != null)
+    await db.ref('users/$ownerUid/notifications').push().set({
+      'type': 'access_request',
+      'deviceId': deviceId,
+      'requesterUid': user.uid,
+      'requesterEmail': user.email ?? '',
+      'message': '${user.email} wants access to $deviceName',
+      'read': false,
+      'createdAt': ServerValue.timestamp,
+    });
+
+    // Add pending device to requester's own list
+    // (allowed: users/$uid/devices write = auth != null)
+    await _addPendingDeviceToUserList(
+        deviceId, deviceName, deviceType, ownerEmail, user, db);
+
+    _done();
+    if (!mounted) return;
+    _showSnack('Request sent to $ownerEmail for "$deviceName".');
+    Navigator.pop(context);
+  }
+
+  Future<void> _addPendingDeviceToUserList(
+    String deviceId,
+    String deviceName,
+    String deviceType,
+    String ownerEmail,
+    User user,
+    FirebaseDatabase db,
+  ) async {
+    final existing =
+        await db.ref('users/${user.uid}/devices/$deviceId').get();
+    if (!existing.exists) {
+      await db.ref('users/${user.uid}/devices/$deviceId').set({
+        'deviceId': deviceId,
+        'name': deviceName,
+        'role': 'pending',
+        'type': deviceType,
+        'ownerEmail': ownerEmail,
+        'addedAt': ServerValue.timestamp,
+      });
+    }
+  }
+
+  void _navigateToDashboard(String deviceId, String deviceType) {
+    if (!mounted) return;
+    if (deviceType == 'relay') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (_) => RelayDashboardScreen(deviceId: deviceId)),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DashboardScreen(deviceId: deviceId)),
+      );
+    }
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Scan Device QR Code'),
+        backgroundColor: Colors.black,
+        title: const Text('Scan Device QR',
+            style: TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             icon: const Icon(Icons.flash_on),
-            onPressed: () => cameraController.toggleTorch(),
+            onPressed: () => _controller.toggleTorch(),
           ),
           IconButton(
-            icon: const Icon(Icons.flip_camera_android),
-            onPressed: () => cameraController.switchCamera(),
+            icon: const Icon(Icons.flip_camera_ios),
+            onPressed: () => _controller.switchCamera(),
           ),
         ],
       ),
       body: Stack(
         children: [
           MobileScanner(
-            controller: cameraController,
+            controller: _controller,
             onDetect: _onDetect,
           ),
-          Container(
-            decoration:
-                BoxDecoration(color: Colors.black.withValues(alpha: 0.5)),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 250,
-                    height: 250,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.blue, width: 3),
-                      borderRadius: BorderRadius.circular(12),
-                      color: Colors.transparent,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Point camera at the QR code\non your Muonix EnvGuard device',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                  if (isLoading) ...[
-                    const SizedBox(height: 24),
-                    const CircularProgressIndicator(color: Colors.blue),
-                    const SizedBox(height: 8),
-                    const Text('Processing...',
-                        style: TextStyle(color: Colors.white)),
-                  ],
-                ],
+          Center(
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.blueAccent, width: 2),
+                borderRadius: BorderRadius.circular(12),
               ),
+            ),
+          ),
+          if (_processing)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+            ),
+          const Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Text(
+              'Point the camera at the device QR code',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 14),
             ),
           ),
         ],

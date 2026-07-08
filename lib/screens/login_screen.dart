@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../widgets/contact_us_footer.dart';
 
@@ -13,11 +15,57 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _phoneController = TextEditingController();
   bool _isLoading = false;
   bool _isGoogleLoading = false;
   bool _isSignUp = false;
   bool _obscurePassword = true;
   String _errorMessage = '';
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  // ── userIndex helpers ──────────────────────────────────────────────────
+  String _encodeEmailKey(String email) {
+    return email.trim().toLowerCase().replaceAll('.', ',');
+  }
+
+  Future<void> _writeUserIndex(String uid, String? email) async {
+    if (email == null || email.trim().isEmpty) return;
+    try {
+      final key = _encodeEmailKey(email);
+      await FirebaseDatabase.instance.ref('userIndex/$key').set(uid);
+    } catch (_) {}
+  }
+  // ────────────────────────────────────────────────────────────────────────
+
+  // After a successful sign-in, the authStateChanges StreamBuilder in
+  // main.dart *should* rebuild automatically. But after an account deletion
+  // in the same app session, the stream can get stuck and never fire for
+  // the next sign-in. To guarantee navigation always happens, we call this
+  // helper right after any successful sign-in — it pushes away from
+  // LoginScreen explicitly so we never depend solely on the stream.
+  void _navigateAfterSignIn() {
+    if (!mounted) return;
+    // Pop everything and let main.dart's StreamBuilder take over from root.
+    // Using pushNamedAndRemoveUntil with '/' would require named routes,
+    // so instead we just pop to root — if LoginScreen was pushed on top of
+    // something, pop it; if it IS the root (normal case), the StreamBuilder
+    // will have already rebuilt by the time this runs, so we force it by
+    // calling setState on the nearest ancestor via a post-frame callback.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Trigger the root StreamBuilder to re-evaluate by signing in again
+      // isn't needed — just tell Flutter to rebuild from root.
+      final nav = Navigator.of(context, rootNavigator: true);
+      nav.pushNamedAndRemoveUntil('/', (route) => false);
+    });
+  }
 
   Future<void> _signInWithGoogle() async {
     setState(() {
@@ -27,11 +75,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn();
-      await googleSignIn.signOut();
+      await googleSignIn.signOut(); // clear any cached account
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
-        setState(() => _isGoogleLoading = false);
+        // User cancelled the picker
+        if (mounted) setState(() => _isGoogleLoading = false);
         return;
       }
 
@@ -43,18 +92,52 @@ class _LoginScreenState extends State<LoginScreen> {
         idToken: googleAuth.idToken,
       );
 
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+
+      final user = userCredential.user;
+      if (user != null) {
+        // Backfill email into DB
+        try {
+          await FirebaseDatabase.instance
+              .ref('users/${user.uid}')
+              .update({'email': user.email ?? ''});
+        } catch (_) {}
+
+        // Keep userIndex in sync
+        await _writeUserIndex(user.uid, user.email);
+      }
+
+      // FIX: explicitly navigate after Google sign-in instead of relying
+      // solely on the authStateChanges stream, which can get stuck after
+      // an account deletion earlier in the same app session.
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true)
+            .pushNamedAndRemoveUntil('/', (route) => false);
+      }
     } catch (e) {
-      setState(() => _errorMessage = 'Google sign in failed. Try again.');
-    } finally {
-      if (mounted) setState(() => _isGoogleLoading = false);
+      if (mounted) {
+        setState(() {
+          _isGoogleLoading = false;
+          _errorMessage = 'Google sign in failed. Try again.';
+        });
+      }
     }
+    // Note: we don't set _isGoogleLoading = false on success because
+    // the screen is navigating away — setting state on an unmounting
+    // widget causes an error.
   }
 
   Future<void> _authenticate() async {
     if (_emailController.text.trim().isEmpty ||
-        _passwordController.text.trim().isEmpty) {
+        _passwordController.text.trim().isEmpty ||
+        (_isSignUp && _phoneController.text.trim().isEmpty)) {
       setState(() => _errorMessage = 'Please fill in all fields');
+      return;
+    }
+
+    if (_isSignUp && _phoneController.text.trim().length < 10) {
+      setState(() => _errorMessage = 'Enter a valid 10-digit phone number');
       return;
     }
 
@@ -70,6 +153,19 @@ class _LoginScreenState extends State<LoginScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
+
+        final uid = credential.user?.uid;
+        if (uid != null) {
+          try {
+            await FirebaseDatabase.instance.ref('users/$uid').update({
+              'email': _emailController.text.trim(),
+              'phone': _phoneController.text.trim(),
+            });
+          } catch (_) {}
+
+          await _writeUserIndex(uid, _emailController.text.trim());
+        }
+
         await credential.user?.sendEmailVerification();
         await FirebaseAuth.instance.signOut();
         if (mounted) {
@@ -89,8 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child:
-                      const Text('OK', style: TextStyle(color: Colors.blue)),
+                  child: const Text('OK', style: TextStyle(color: Colors.blue)),
                 ),
               ],
             ),
@@ -106,6 +201,22 @@ class _LoginScreenState extends State<LoginScreen> {
           await FirebaseAuth.instance.signOut();
           setState(() => _errorMessage =
               'Please verify your email before logging in.\nCheck your inbox or spam/junk folder for the verification link.');
+        } else if (credential.user != null) {
+          try {
+            await FirebaseDatabase.instance
+                .ref('users/${credential.user!.uid}')
+                .update({'email': _emailController.text.trim()});
+          } catch (_) {}
+
+          await _writeUserIndex(
+              credential.user!.uid, _emailController.text.trim());
+
+          // FIX: same explicit navigation as Google sign-in, for consistency
+          // and to handle the post-deletion stream-stuck case.
+          if (mounted) {
+            Navigator.of(context, rootNavigator: true)
+                .pushNamedAndRemoveUntil('/', (route) => false);
+          }
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -161,16 +272,14 @@ class _LoginScreenState extends State<LoginScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child:
-                    const Text('OK', style: TextStyle(color: Colors.blue)),
+                child: const Text('OK', style: TextStyle(color: Colors.blue)),
               ),
             ],
           ),
         );
       }
     } on FirebaseAuthException catch (e) {
-      setState(
-          () => _errorMessage = e.message ?? 'Error sending reset email');
+      setState(() => _errorMessage = e.message ?? 'Error sending reset email');
     }
   }
 
@@ -283,23 +392,20 @@ class _LoginScreenState extends State<LoginScreen> {
                           children: [
                             Expanded(
                                 child: Divider(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.15))),
+                                    color: Colors.white.withValues(alpha: 0.15))),
                             Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 12),
                               child: Text(
                                 'or',
                                 style: TextStyle(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.4),
+                                    color: Colors.white.withValues(alpha: 0.4),
                                     fontSize: 13),
                               ),
                             ),
                             Expanded(
                                 child: Divider(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.15))),
+                                    color: Colors.white.withValues(alpha: 0.15))),
                           ],
                         ),
                         const SizedBox(height: 20),
@@ -320,16 +426,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                 decoration: InputDecoration(
                                   labelText: 'Email',
                                   labelStyle: TextStyle(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.6)),
+                                      color: Colors.white.withValues(alpha: 0.6)),
                                   prefixIcon: Icon(Icons.email_outlined,
-                                      color:
-                                          Colors.blue.withValues(alpha: 0.8)),
+                                      color: Colors.blue.withValues(alpha: 0.8)),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.15)),
+                                        color: Colors.white.withValues(alpha: 0.15)),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -337,30 +440,60 @@ class _LoginScreenState extends State<LoginScreen> {
                                         color: Colors.blue, width: 1.5),
                                   ),
                                   filled: true,
-                                  fillColor:
-                                      Colors.white.withValues(alpha: 0.05),
+                                  fillColor: Colors.white.withValues(alpha: 0.05),
                                 ),
                               ),
+                              if (_isSignUp) ...[
+                                const SizedBox(height: 16),
+                                TextField(
+                                  controller: _phoneController,
+                                  keyboardType: TextInputType.phone,
+                                  maxLength: 10,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  style: const TextStyle(color: Colors.white),
+                                  decoration: InputDecoration(
+                                    labelText: 'Phone Number',
+                                    counterText: '',
+                                    labelStyle: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.6)),
+                                    prefixIcon: Icon(Icons.phone_outlined,
+                                        color: Colors.blue.withValues(alpha: 0.8)),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                          color: Colors.white.withValues(alpha: 0.15)),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                          color: Colors.blue, width: 1.5),
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.white.withValues(alpha: 0.05),
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 16),
                               TextField(
                                 controller: _passwordController,
                                 obscureText: _obscurePassword,
                                 style: const TextStyle(color: Colors.white),
                                 decoration: InputDecoration(
-                                  labelText: 'Password',
+                                  labelText: _isSignUp
+                                      ? 'Create Password'
+                                      : 'Password',
                                   labelStyle: TextStyle(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.6)),
+                                      color: Colors.white.withValues(alpha: 0.6)),
                                   prefixIcon: Icon(Icons.lock_outline,
-                                      color:
-                                          Colors.blue.withValues(alpha: 0.8)),
+                                      color: Colors.blue.withValues(alpha: 0.8)),
                                   suffixIcon: IconButton(
                                     icon: Icon(
                                       _obscurePassword
                                           ? Icons.visibility_off_outlined
                                           : Icons.visibility_outlined,
-                                      color:
-                                          Colors.white.withValues(alpha: 0.4),
+                                      color: Colors.white.withValues(alpha: 0.4),
                                     ),
                                     onPressed: () => setState(() =>
                                         _obscurePassword = !_obscurePassword),
@@ -368,8 +501,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.15)),
+                                        color: Colors.white.withValues(alpha: 0.15)),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -377,8 +509,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         color: Colors.blue, width: 1.5),
                                   ),
                                   filled: true,
-                                  fillColor:
-                                      Colors.white.withValues(alpha: 0.05),
+                                  fillColor: Colors.white.withValues(alpha: 0.05),
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -390,8 +521,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     child: Text(
                                       'Forgot Password?',
                                       style: TextStyle(
-                                        color:
-                                            Colors.blue.withValues(alpha: 0.8),
+                                        color: Colors.blue.withValues(alpha: 0.8),
                                         fontSize: 13,
                                       ),
                                     ),
@@ -406,8 +536,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     color: Colors.red.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                        color:
-                                            Colors.red.withValues(alpha: 0.3)),
+                                        color: Colors.red.withValues(alpha: 0.3)),
                                   ),
                                   child: Text(
                                     _errorMessage,
@@ -420,8 +549,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 width: double.infinity,
                                 height: 52,
                                 child: ElevatedButton(
-                                  onPressed:
-                                      _isLoading ? null : _authenticate,
+                                  onPressed: _isLoading ? null : _authenticate,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.blue,
                                     foregroundColor: Colors.white,
@@ -460,8 +588,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ? 'Already have an account? '
                                   : 'New user? ',
                               style: TextStyle(
-                                  color:
-                                      Colors.white.withValues(alpha: 0.5)),
+                                  color: Colors.white.withValues(alpha: 0.5)),
                             ),
                             GestureDetector(
                               onTap: () =>

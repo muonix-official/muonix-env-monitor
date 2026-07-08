@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -12,324 +13,234 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late DatabaseReference _settingsRef;
+  late final TextEditingController _deviceNameController;
 
-  double minTemp = 18;
-  double maxTemp = 35;
-  double minHum = 30;
-  double maxHum = 70;
-  double maxGas = 20;
-  bool notifyEnabled = true;
-  bool isLoading = true;
+  double _minTemp = 18;
+  double _maxTemp = 35;
+  double _minHumidity = 30;
+  double _maxHumidity = 70;  // FIXED: was 80
+  double _maxGas = 20;        // FIXED: was 70
+  bool _notifyEnabled = true;
+  bool _loading = true;
+  bool _saving = false;
 
-  final _deviceNameController = TextEditingController();
+  StreamSubscription? _settingsSub;
 
   @override
   void initState() {
     super.initState();
-    _settingsRef = FirebaseDatabase.instance
-        .ref('devices/${widget.deviceId}/settings');
+    _deviceNameController = TextEditingController();
     _loadSettings();
   }
 
+  @override
+  void dispose() {
+    _deviceNameController.dispose();
+    _settingsSub?.cancel();
+    super.dispose();
+  }
+
   void _loadSettings() {
-    _settingsRef.once().then((event) {
+    final ref = FirebaseDatabase.instance
+        .ref('devices/${widget.deviceId}/settings');
+    _settingsSub = ref.onValue.listen((event) {
       final data = event.snapshot.value as Map?;
-      if (data != null && mounted) {
-        setState(() {
-          minTemp = (data['minTemp'] ?? 18).toDouble();
-          maxTemp = (data['maxTemp'] ?? 35).toDouble();
-          minHum = (data['minHumidity'] ?? 30).toDouble();
-          maxHum = (data['maxHumidity'] ?? 70).toDouble();
-          maxGas = (data['maxGas'] ?? 20).toDouble();
-          notifyEnabled = data['notifyEnabled'] ?? true;
-          _deviceNameController.text = data['deviceName'] ?? widget.deviceId;
-          isLoading = false;
-        });
-      } else {
-        setState(() => isLoading = false);
-      }
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (data == null) return;
+        _minTemp      = (data['minTemp']      as num?)?.toDouble() ?? 18;
+        _maxTemp      = (data['maxTemp']      as num?)?.toDouble() ?? 35;
+        _minHumidity  = (data['minHumidity']  as num?)?.toDouble() ?? 30;
+        _maxHumidity  = (data['maxHumidity']  as num?)?.toDouble() ?? 70; // FIXED
+        _maxGas       = (data['maxGas']       as num?)?.toDouble() ?? 20; // FIXED
+        _notifyEnabled = data['notifyEnabled'] as bool? ?? true;
+        final name = data['deviceName']?.toString() ?? '';
+        if (_deviceNameController.text != name) {
+          _deviceNameController.text = name;
+        }
+      });
     });
   }
 
-  Future<void> _saveSettings() async {
-    final newName = _deviceNameController.text.trim();
-
-    await _settingsRef.update({
-      'minTemp': minTemp,
-      'maxTemp': maxTemp,
-      'minHumidity': minHum,
-      'maxHumidity': maxHum,
-      'maxGas': maxGas,
-      'notifyEnabled': notifyEnabled,
-      'deviceName': newName,
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    await FirebaseDatabase.instance
+        .ref('devices/${widget.deviceId}/settings')
+        .update({
+      'minTemp':      _minTemp,
+      'maxTemp':      _maxTemp,
+      'minHumidity':  _minHumidity,
+      'maxHumidity':  _maxHumidity,
+      'maxGas':       _maxGas,
+      'notifyEnabled': _notifyEnabled,
+      'deviceName':   _deviceNameController.text.trim(),
     });
+    if (!mounted) return;
+    setState(() => _saving = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Settings saved')),
+    );
+  }
 
-    // Sync name to user's device list so devices_screen updates too
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      await FirebaseDatabase.instance
-          .ref('users/${user.uid}/devices/${widget.deviceId}/name')
-          .set(newName);
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Settings saved!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
+  Future<void> _resetToDefaults() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2838),
+        title: const Text('Reset to defaults?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+            'This will restore all thresholds to factory values.',
+            style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Reset',
+                  style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() {
+      _minTemp      = 18;
+      _maxTemp      = 35;
+      _minHumidity  = 30;
+      _maxHumidity  = 70; // FIXED: was 80
+      _maxGas       = 20; // FIXED: was 70
+      _notifyEnabled = true;
+    });
+    await _save();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0F1923),
       appBar: AppBar(
-        title: const Text('Settings'),
+        backgroundColor: const Color(0xFF0F1923),
+        title: const Text('Device Settings',
+            style: TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           TextButton(
-            onPressed: _saveSettings,
-            child: const Text(
-              'Save',
-              style: TextStyle(
-                color: Colors.blue,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            onPressed: _resetToDefaults,
+            child: const Text('Reset',
+                style: TextStyle(color: Colors.orangeAccent)),
           ),
         ],
       ),
-      body: isLoading
-          ? const Column(
-              children: [
-                Expanded(child: Center(child: CircularProgressIndicator())),
-                ContactUsFooter(),
-              ],
-            )
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
                 Expanded(
-                  child: SingleChildScrollView(
+                  child: ListView(
                     padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionTitle('Device'),
-                        _buildCard(
-                          child: TextField(
-                            controller: _deviceNameController,
-                            decoration: const InputDecoration(
-                              labelText: 'Device Name',
-                              prefixIcon: Icon(Icons.sensors),
-                              border: OutlineInputBorder(),
-                            ),
+                    children: [
+                      _sectionTitle('Device Name'),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _deviceNameController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Enter device name',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          filled: true,
+                          fillColor: const Color(0xFF1B2838),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 24),
 
-                        const SizedBox(height: 24),
+                      _sectionTitle('Temperature Range (°C)'),
+                      _rangeSlider(
+                        values: RangeValues(_minTemp, _maxTemp),
+                        min: -10,
+                        max: 80,
+                        onChanged: (v) => setState(() {
+                          _minTemp = v.start;
+                          _maxTemp = v.end;
+                        }),
+                        labelStart: '${_minTemp.toStringAsFixed(0)}°C',
+                        labelEnd:   '${_maxTemp.toStringAsFixed(0)}°C',
+                      ),
+                      const SizedBox(height: 16),
 
-                        _buildSectionTitle('Temperature Safe Range'),
-                        _buildCard(
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Min Temp'),
-                                  Text(
-                                    '${minTemp.toInt()}°C',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Slider(
-                                value: minTemp,
-                                min: 0,
-                                max: 40,
-                                divisions: 40,
-                                onChanged: (val) {
-                                  if (val < maxTemp) {
-                                    setState(() => minTemp = val);
-                                  }
-                                },
-                              ),
-                              const Divider(),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Max Temp'),
-                                  Text(
-                                    '${maxTemp.toInt()}°C',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.red,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Slider(
-                                value: maxTemp,
-                                min: 0,
-                                max: 60,
-                                divisions: 60,
-                                onChanged: (val) {
-                                  if (val > minTemp) {
-                                    setState(() => maxTemp = val);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
+                      _sectionTitle('Humidity Range (%)'),
+                      _rangeSlider(
+                        values: RangeValues(_minHumidity, _maxHumidity),
+                        min: 0,
+                        max: 100,
+                        onChanged: (v) => setState(() {
+                          _minHumidity = v.start;
+                          _maxHumidity = v.end;
+                        }),
+                        labelStart: '${_minHumidity.toStringAsFixed(0)}%',
+                        labelEnd:   '${_maxHumidity.toStringAsFixed(0)}%',
+                      ),
+                      const SizedBox(height: 16),
+
+                      _sectionTitle('Gas Alert Threshold (%)'),
+                      Slider(
+                        value: _maxGas,
+                        min: 5,
+                        max: 100,      // FIXED: was 200
+                        divisions: 95, // FIXED: was 190
+                        label: '${_maxGas.toStringAsFixed(0)}%',
+                        activeColor: Colors.orangeAccent,
+                        onChanged: (v) => setState(() => _maxGas = v),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          'Alert when gas ≥ ${_maxGas.toStringAsFixed(0)}%',
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 12),
                         ),
+                      ),
+                      const SizedBox(height: 24),
 
-                        const SizedBox(height: 24),
+                      SwitchListTile(
+                        title: const Text('Push Notifications',
+                            style: TextStyle(color: Colors.white)),
+                        subtitle: const Text(
+                            'Receive alerts for dangerous readings',
+                            style: TextStyle(color: Colors.white54)),
+                        value: _notifyEnabled,
+                        activeColor: Colors.blueAccent,
+                        tileColor: const Color(0xFF1B2838),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                        onChanged: (v) => setState(() => _notifyEnabled = v),
+                      ),
+                      const SizedBox(height: 32),
 
-                        _buildSectionTitle('Humidity Safe Range'),
-                        _buildCard(
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Min Humidity'),
-                                  Text(
-                                    '${minHum.toInt()}%',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Slider(
-                                value: minHum,
-                                min: 0,
-                                max: 100,
-                                divisions: 100,
-                                onChanged: (val) {
-                                  if (val < maxHum) {
-                                    setState(() => minHum = val);
-                                  }
-                                },
-                              ),
-                              const Divider(),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Max Humidity'),
-                                  Text(
-                                    '${maxHum.toInt()}%',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.red,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Slider(
-                                value: maxHum,
-                                min: 0,
-                                max: 100,
-                                divisions: 100,
-                                onChanged: (val) {
-                                  if (val > minHum) {
-                                    setState(() => maxHum = val);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
+                      ElevatedButton(
+                        onPressed: _saving ? null : _save,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
                         ),
-
-                        const SizedBox(height: 24),
-
-                        _buildSectionTitle('Gas Level Safe Threshold (MQ-6)'),
-                        _buildCard(
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Max Gas Level'),
-                                  Text(
-                                    '${maxGas.toInt()}%',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.purple,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Slider(
-                                value: maxGas,
-                                min: 10,
-                                max: 100,
-                                divisions: 90,
-                                activeColor: Colors.purple,
-                                onChanged: (val) {
-                                  setState(() => maxGas = val);
-                                },
-                              ),
-                              const Text(
-                                'Alert triggers when gas level exceeds this value',
+                        child: _saving
+                            ? const SizedBox(
+                                height: 20, width: 20,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : const Text('Save Settings',
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        _buildSectionTitle('Notifications'),
-                        _buildCard(
-                          child: SwitchListTile(
-                            title: const Text('Enable Alerts'),
-                            subtitle: const Text(
-                                'Get notified when values are unsafe'),
-                            value: notifyEnabled,
-                            onChanged: (val) =>
-                                setState(() => notifyEnabled = val),
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.restore),
-                            label: const Text('Reset to Defaults'),
-                            onPressed: () {
-                              setState(() {
-                                minTemp = 18;
-                                maxTemp = 35;
-                                minHum = 30;
-                                maxHum = 70;
-                                maxGas = 20;
-                                notifyEnabled = true;
-                                _deviceNameController.text = widget.deviceId;
-                              });
-                            },
-                          ),
-                        ),
-
-                        const SizedBox(height: 32),
-                      ],
-                    ),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold)),
+                      ),
+                    ],
                   ),
                 ),
                 const ContactUsFooter(),
@@ -338,30 +249,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: Colors.grey,
-        ),
-      ),
-    );
-  }
+  Widget _sectionTitle(String title) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(title,
+            style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w600)),
+      );
 
-  Widget _buildCard({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: child,
+  Widget _rangeSlider({
+    required RangeValues values,
+    required double min,
+    required double max,
+    required ValueChanged<RangeValues> onChanged,
+    required String labelStart,
+    required String labelEnd,
+  }) {
+    return Column(
+      children: [
+        RangeSlider(
+          values: values,
+          min: min,
+          max: max,
+          activeColor: Colors.blueAccent,
+          labels: RangeLabels(labelStart, labelEnd),
+          onChanged: onChanged,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Min: $labelStart',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              Text('Max: $labelEnd',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

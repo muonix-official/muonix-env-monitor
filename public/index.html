@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Muonix EnvGuard – Admin Dashboard</title>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3e;
+      --accent: #4f8ef7;
+      --safe: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --text: #e2e8f0;
+      --muted: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Login screen ── */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .login-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      width: 380px;
+      text-align: center;
+    }
+    .login-box img { width: 60px; margin-bottom: 12px; }
+    .login-box h1 { font-size: 22px; margin-bottom: 4px; }
+    .login-box p { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+    .login-box input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 12px;
+      outline: none;
+    }
+    .login-box input:focus { border-color: var(--accent); }
+    .btn {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .btn:hover { opacity: 0.9; }
+    #login-error {
+      color: var(--danger);
+      font-size: 13px;
+      margin-top: 10px;
+      min-height: 18px;
+    }
+
+    /* ── App shell ── */
+    #app { display: none; flex-direction: column; min-height: 100vh; }
+
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header span { color: var(--muted); font-size: 13px; }
+    #logout-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 6px 16px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+    .container { padding: 28px; flex: 1; }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .stat-card .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card .value.safe { color: var(--safe); }
+    .stat-card .value.warn { color: var(--warn); }
+    .stat-card .value.danger { color: var(--danger); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Table ── */
+    .table-wrap {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .table-toolbar {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .table-toolbar input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      color: var(--text);
+      font-size: 13px;
+      width: 260px;
+      outline: none;
+    }
+    .table-toolbar input:focus { border-color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(79,142,247,0.05); }
+    td { padding: 14px 16px; font-size: 13px; vertical-align: middle; }
+    td .muted { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge.online { background: rgba(34,197,94,0.15); color: var(--safe); }
+    .badge.offline { background: rgba(100,116,139,0.2); color: var(--muted); }
+    .badge.safe { background: rgba(34,197,94,0.15); color: var(--safe); }
+    .badge.warning { background: rgba(245,158,11,0.15); color: var(--warn); }
+    .badge.danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+    .ack-yes { color: var(--safe); font-weight: 600; font-size: 12px; }
+    .ack-no  { color: var(--muted); font-size: 12px; }
+
+    /* ── Action buttons ── */
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 10px;
+      border-radius: 7px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      margin-right: 6px;
+      white-space: nowrap;
+    }
+    .action-btn.silence { color: var(--warn); border-color: rgba(245,158,11,0.4); }
+    .action-btn.silence:hover { background: rgba(245,158,11,0.1); }
+    .action-btn.silence:disabled { opacity: 0.3; cursor: not-allowed; }
+    .action-btn.delete { color: var(--danger); border-color: rgba(239,68,68,0.4); }
+    .action-btn.delete:hover { background: rgba(239,68,68,0.1); }
+
+    /* ── ACK Log tab ── */
+    #tab-ack { display: none; }
+
+    /* ── Loading ── */
+    .loading { text-align: center; color: var(--muted); padding: 48px; font-size: 14px; }
+    .no-data  { text-align: center; color: var(--muted); padding: 48px; font-size: 14px; }
+
+    @media (max-width: 900px) {
+      .stats-bar { grid-template-columns: repeat(2,1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ LOGIN ══════════════ -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>🌡️ Muonix EnvGuard</h1>
+    <p>Admin Dashboard — Staff Access Only</p>
+    <input type="email" id="login-email" placeholder="Staff email" autocomplete="email"/>
+    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password"/>
+    <button class="btn" onclick="doLogin()">Sign In</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- ══════════════ APP ══════════════ -->
+<div id="app">
+  <header>
+    <div>
+      <h1>🌡️ Muonix EnvGuard — Admin</h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <span id="admin-email"></span>
+      <button id="logout-btn" onclick="doLogout()">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Stats -->
+    <div class="stats-bar">
+      <div class="stat-card">
+        <div class="label">Total Users</div>
+        <div class="value" id="stat-users">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Online Devices</div>
+        <div class="value safe" id="stat-online">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">⚠️ Warning</div>
+        <div class="value warn" id="stat-warn">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">🚨 Danger</div>
+        <div class="value danger" id="stat-danger">—</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('users')">Users & Devices</div>
+      <div class="tab" onclick="switchTab('ack')">Acknowledgment Log</div>
+    </div>
+
+    <!-- Users & Devices Tab -->
+    <div id="tab-users">
+      <div class="table-wrap">
+        <div class="table-toolbar">
+          <input type="text" id="search-input" placeholder="Search by name, email or phone…" oninput="filterTable()"/>
+        </div>
+        <table id="users-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Phone</th>
+              <th>Device</th>
+              <th>Status</th>
+              <th>Temperature</th>
+              <th>Humidity</th>
+              <th>Alert Level</th>
+              <th>Danger ACK</th>
+              <th>Last Seen</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody">
+            <tr><td colspan="10" class="loading">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ACK Log Tab -->
+    <div id="tab-ack" style="display:none;">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>User</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Device</th>
+            </tr>
+          </thead>
+          <tbody id="ack-tbody">
+            <tr><td colspan="5" class="loading">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// 🔧 REPLACE THESE WITH YOUR FIREBASE PROJECT CONFIG
+//    Firebase Console → Project Settings → Your apps → SDK setup
+// ══════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyA_xmQV9v4tPYhJv3Ic-XPUv29doAjrVZI",
+  authDomain: "sensorbox-6ccc8.firebaseapp.com",
+  databaseURL: "https://sensorbox-6ccc8-default-rtdb.firebaseio.com",
+  projectId: "sensorbox-6ccc8",
+  storageBucket: "sensorbox-6ccc8.firebasestorage.app",
+  messagingSenderId: "164844211670",
+  appId: "1:164844211670:web:31145e3546d4722a8c6877"
+};
+
+// ══════════════════════════════════════════════════════════════
+// List of admin staff emails — only these can log in
+// ══════════════════════════════════════════════════════════════
+const ADMIN_EMAILS = [
+  "manishmuonix@gmail.com",
+  "bhoomika.jalandhra@gmail.com",
+];
+
+// ──────────────────────────────────────────────
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.database();
+
+// ── Auth ──
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+
+  if (ADMIN_EMAILS.length > 0 && !ADMIN_EMAILS.includes(email.toLowerCase())) {
+    errEl.textContent = 'Access denied. This email is not registered as admin.';
+    return;
+  }
+
+  try {
+    await auth.signInWithEmailAndPassword(email, pass);
+  } catch(e) {
+    errEl.textContent = e.message;
+  }
+}
+
+function doLogout() { auth.signOut(); }
+
+auth.onAuthStateChanged(user => {
+  if (user) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('admin-email').textContent = user.email;
+    loadDashboard();
+  } else {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+  }
+});
+
+// ── Tab switching ──
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((el, i) => {
+    el.classList.toggle('active', (tab === 'users' && i === 0) || (tab === 'ack' && i === 1));
+  });
+  document.getElementById('tab-users').style.display = tab === 'users' ? 'block' : 'none';
+  document.getElementById('tab-ack').style.display   = tab === 'ack'   ? 'block' : 'none';
+}
+
+// ── Main data load ──
+let allRows = []; // for search filtering
+
+function loadDashboard() {
+  // Listen to all users
+  db.ref('users').on('value', usersSnap => {
+    const users = usersSnap.val() || {};
+
+    // Listen to all devices
+    db.ref('devices').on('value', devicesSnap => {
+      const devices = devicesSnap.val() || {};
+
+      allRows = [];
+      let totalOnline = 0, totalWarn = 0, totalDanger = 0;
+
+      // Build rows: for each device, find its approved member(s)
+      Object.entries(devices).forEach(([deviceId, device]) => {
+        const live    = device.live || {};
+        const members = device.members || {};
+
+        // Find approved member UID(s) for this device
+        const approvedUid = Object.keys(members).find(uid => members[uid] === 'approved') || '';
+        const user = users[approvedUid] || {};
+
+        // Determine alert level from real fields (alert: true/false, not alertLevel string)
+        const isDanger  = live.alert === true;
+        const isWarning = !isDanger && (live.gasAlert === true);
+        const alertLvl  = isDanger ? 'danger' : (isWarning ? 'warning' : 'safe');
+
+        // Online status: based on recent timestamp (within 30 sec), matching app logic
+        const isOnline = isRecentTimestamp(live.ts);
+
+        const ackBy     = live.ackBy || {};
+        const userAcked = ackBy[approvedUid]?.seen === true;
+        const ackTs     = ackBy[approvedUid]?.ts;
+        const buzzerOff = live.buzzerOff === true;
+
+        if (isOnline)             totalOnline++;
+        if (alertLvl === 'warning') totalWarn++;
+        if (alertLvl === 'danger')  totalDanger++;
+
+        allRows.push({
+          uid:        approvedUid,
+          email:      user.email || '—',
+          phone:      user.phone || '—',
+          name:       user.displayName || user.email || approvedUid || '—',
+          deviceId,
+          deviceName: (device.settings && device.settings.deviceName) || deviceId,
+          isOnline,
+          temp:       live.temp     ?? '—',
+          humidity:   live.humidity ?? '—',
+          alertLvl,
+          userAcked,
+          ackTs,
+          buzzerOff,
+          lastSeen:   live.ts || null,
+        });
+      });
+
+      // Update stats
+      document.getElementById('stat-users').textContent  = Object.keys(users).length;
+      document.getElementById('stat-online').textContent = totalOnline;
+      document.getElementById('stat-warn').textContent   = totalWarn;
+      document.getElementById('stat-danger').textContent = totalDanger;
+
+      renderTable(allRows);
+    });
+  });
+
+  // ACK log
+  db.ref('adminLogs/acknowledgments').orderByChild('ts').limitToLast(100)
+    .on('value', snap => {
+      const logs = [];
+      snap.forEach(child => logs.unshift({ id: child.key, ...child.val() }));
+      renderAckLog(logs);
+    });
+}
+
+// Check if a ts (ISO string) is within last 30 seconds — matches app's online logic
+function isRecentTimestamp(ts) {
+  if (!ts) return false;
+  try {
+    const lastSeen = new Date(ts).getTime();
+    const diffSec = (Date.now() - lastSeen) / 1000;
+    return diffSec >= 0 && diffSec < 30;
+  } catch (_) {
+    return false;
+  }
+}
+
+// ── Remote control: silence buzzer ──
+async function silenceBuzzer(deviceId) {
+  if (!confirm(`Silence buzzer on ${deviceId}?`)) return;
+  try {
+    await db.ref(`devices/${deviceId}/live/buzzerOff`).set(true);
+  } catch (e) {
+    alert('Failed to silence buzzer: ' + e.message);
+  }
+}
+
+// ── Remote control: delete device ──
+async function deleteDevice(deviceId) {
+  if (!confirm(`Permanently delete device "${deviceId}"? This cannot be undone.`)) return;
+  if (!confirm(`Are you absolutely sure? All history and settings for "${deviceId}" will be lost.`)) return;
+  try {
+    await db.ref(`devices/${deviceId}`).remove();
+  } catch (e) {
+    alert('Failed to delete device: ' + e.message);
+  }
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById('users-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="no-data">No devices found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const onlineBadge = r.isOnline
+      ? '<span class="badge online"><span class="dot"></span>Online</span>'
+      : '<span class="badge offline"><span class="dot"></span>Offline</span>';
+
+    const alertBadge = {
+      safe:    '<span class="badge safe">✓ Safe</span>',
+      warning: '<span class="badge warning">⚠ Warning</span>',
+      danger:  '<span class="badge danger">🚨 Danger</span>',
+    }[r.alertLvl] || '<span class="badge safe">✓ Safe</span>';
+
+    const ackCell = r.alertLvl === 'danger'
+      ? (r.userAcked
+          ? `<span class="ack-yes">✓ Seen ${r.ackTs ? new Date(r.ackTs).toLocaleTimeString() : ''}</span>`
+          : `<span class="ack-no">Pending</span>`)
+      : '<span class="ack-no">—</span>';
+
+    const lastSeen = r.lastSeen
+      ? new Date(r.lastSeen).toLocaleString()
+      : '—';
+
+    const temp     = r.temp !== '—' ? `${Number(r.temp).toFixed(1)} °C` : '—';
+    const humidity = r.humidity !== '—' ? `${Number(r.humidity).toFixed(1)} %` : '—';
+
+    const silenceBtn = r.buzzerOff
+      ? `<button class="action-btn silence" disabled>🔕 Silenced</button>`
+      : `<button class="action-btn silence" onclick="silenceBuzzer('${r.deviceId}')">🔕 Silence</button>`;
+
+    const deleteBtn = `<button class="action-btn delete" onclick="deleteDevice('${r.deviceId}')">🗑 Delete</button>`;
+
+    return `<tr data-search="${(r.name + r.email + r.phone).toLowerCase()}">
+      <td>
+        <div>${escHtml(r.name)}</div>
+        <div class="muted">${escHtml(r.email)}</div>
+      </td>
+      <td>${escHtml(r.phone)}</td>
+      <td>
+        <div>${escHtml(r.deviceName)}</div>
+        <div class="muted">${escHtml(r.deviceId)}</div>
+      </td>
+      <td>${onlineBadge}</td>
+      <td>${temp}</td>
+      <td>${humidity}</td>
+      <td>${alertBadge}</td>
+      <td>${ackCell}</td>
+      <td style="color:var(--muted);font-size:12px">${lastSeen}</td>
+      <td>${silenceBtn}${deleteBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderAckLog(logs) {
+  const tbody = document.getElementById('ack-tbody');
+  if (!logs.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="no-data">No acknowledgments yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = logs.map(l => `
+    <tr>
+      <td style="color:var(--muted);font-size:12px">${l.ts ? new Date(l.ts).toLocaleString() : '—'}</td>
+      <td>${escHtml(l.userName || '—')}</td>
+      <td>${escHtml(l.userEmail || '—')}</td>
+      <td>${escHtml(l.userPhone || '—')}</td>
+      <td>${escHtml(l.deviceName || l.deviceId || '—')}</td>
+    </tr>`).join('');
+}
+
+function filterTable() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const rows = allRows.filter(r =>
+    (r.name + r.email + r.phone).toLowerCase().includes(q)
+  );
+  renderTable(rows);
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+// Enter key on login
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+</script>
+</body>
+</html>
