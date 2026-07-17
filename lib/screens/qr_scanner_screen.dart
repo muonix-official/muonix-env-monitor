@@ -73,28 +73,37 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     try {
       final db = FirebaseDatabase.instance;
 
-      // Read meta — allowed for any auth != null user
-      final metaSnap = await db.ref('devices/$deviceId/meta').get();
-      final meta = metaSnap.value as Map?;
-      final ownerUid = meta?['owner_uid']?.toString();
-      // Store owner email in meta so we never need to read another user's node
+      // Read meta and blocked in parallel
+      final results = await Future.wait([
+        db.ref('devices/$deviceId/meta').get(),
+        db.ref('devices/$deviceId/blocked').get(),
+      ]);
+      final metaSnap    = results[0];
+      final blockedSnap = results[1];
+
+      final meta      = metaSnap.value as Map?;
+      final ownerUid  = meta?['owner_uid']?.toString();
       final ownerEmail = meta?['owner_email']?.toString() ?? 'the owner';
 
-      if (ownerUid == null || ownerUid.isEmpty) {
-        // No owner — become owner
+      // FIX: treat the device as ownerless when:
+      //  • owner_uid is missing/empty — never been claimed
+      //  • blocked == true — previous sole owner deleted their account,
+      //    which sets blocked=true but historically left owner_uid behind.
+      //    The next person to scan gets to claim it fresh.
+      final isBlocked = blockedSnap.exists && blockedSnap.value == true;
+
+      if (ownerUid == null || ownerUid.isEmpty || isBlocked) {
         await _addAsOwner(deviceId, deviceType, user, db);
         return;
       }
 
       if (ownerUid == user.uid) {
-        // Already owner — just open dashboard
+        // Already the owner — re-claim (idempotent) and open dashboard
         await _addAsOwner(deviceId, deviceType, user, db);
         return;
       }
 
-      // Someone else owns it — send request
-      // We no longer read users/$ownerUid (permission denied risk)
-      // Owner email comes from devices/$deviceId/meta/owner_email
+      // Someone else owns it — send access request
       await _sendAccessRequest(
           deviceId, deviceType, user, db, ownerUid, ownerEmail);
     } catch (e) {
@@ -109,30 +118,29 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     User user,
     FirebaseDatabase db,
   ) async {
+    // Clear blocked flag (may have been set by a previous owner's deletion)
     await db.ref('devices/$deviceId/blocked').remove();
 
-    // Store owner_email in meta so other users can see who owns the device
-    // without needing to read the users/ node
+    // Write new owner into meta — overwrites any stale owner_uid
     await db.ref('devices/$deviceId/meta').update({
-      'owner_uid': user.uid,
+      'owner_uid':   user.uid,
       'owner_email': user.email ?? '',
-      'type': deviceType,
+      'type':        deviceType,
     });
 
     await db.ref('users/${user.uid}/devices/$deviceId').set({
       'deviceId': deviceId,
-      'name': deviceId,
-      'role': 'owner',
-      'addedAt': ServerValue.timestamp,
-      'type': deviceType,
+      'name':     deviceId,
+      'role':     'owner',
+      'addedAt':  ServerValue.timestamp,
+      'type':     deviceType,
     });
 
     await db.ref('devices/$deviceId/members/${user.uid}').set('approved');
 
-    // Record the owner's own email under memberInfo too. account_management
-    // and any other screen that lists all members (owner included) reads
-    // emails from here — without this the owner would show up by uid
-    // instead of email whenever a full member list is displayed.
+    // Store owner email in memberInfo so account_management_screen can
+    // list all members (including the owner) by email without reading
+    // another user's /users node.
     await db
         .ref('devices/$deviceId/memberInfo/${user.uid}/email')
         .set(user.email ?? '');
@@ -183,27 +191,26 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       }
     }
 
-    // Write access request under device (allowed: requests write = auth != null)
+    // Write access request under device
     await db.ref('devices/$deviceId/requests/${user.uid}').set({
-      'uid': user.uid,
-      'email': user.email ?? '',
+      'uid':         user.uid,
+      'email':       user.email ?? '',
       'requestedAt': ServerValue.timestamp,
-      'status': 'pending',
+      'status':      'pending',
     });
 
-    // Notify owner (allowed: users/$uid/notifications write = auth != null)
+    // Notify owner
     await db.ref('users/$ownerUid/notifications').push().set({
-      'type': 'access_request',
-      'deviceId': deviceId,
-      'requesterUid': user.uid,
+      'type':           'access_request',
+      'deviceId':       deviceId,
+      'requesterUid':   user.uid,
       'requesterEmail': user.email ?? '',
-      'message': '${user.email} wants access to $deviceName',
-      'read': false,
-      'createdAt': ServerValue.timestamp,
+      'message':        '${user.email} wants access to $deviceName',
+      'read':           false,
+      'createdAt':      ServerValue.timestamp,
     });
 
-    // Add pending device to requester's own list
-    // (allowed: users/$uid/devices write = auth != null)
+    // Add pending entry to requester's own device list
     await _addPendingDeviceToUserList(
         deviceId, deviceName, deviceType, ownerEmail, user, db);
 
@@ -225,12 +232,12 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         await db.ref('users/${user.uid}/devices/$deviceId').get();
     if (!existing.exists) {
       await db.ref('users/${user.uid}/devices/$deviceId').set({
-        'deviceId': deviceId,
-        'name': deviceName,
-        'role': 'pending',
-        'type': deviceType,
+        'deviceId':   deviceId,
+        'name':       deviceName,
+        'role':       'pending',
+        'type':       deviceType,
         'ownerEmail': ownerEmail,
-        'addedAt': ServerValue.timestamp,
+        'addedAt':    ServerValue.timestamp,
       });
     }
   }
