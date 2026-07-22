@@ -18,8 +18,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _minTemp = 18;
   double _maxTemp = 35;
   double _minHumidity = 30;
-  double _maxHumidity = 70;  // FIXED: was 80
-  double _maxGas = 20;        // FIXED: was 70
+  double _maxHumidity = 80;  // FIXED: was 80
+  double _maxGas = 20;        // FIXED: was 80
   bool _notifyEnabled = true;
   bool _loading = true;
   bool _saving = false;
@@ -52,7 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _minTemp      = (data['minTemp']      as num?)?.toDouble() ?? 18;
         _maxTemp      = (data['maxTemp']      as num?)?.toDouble() ?? 35;
         _minHumidity  = (data['minHumidity']  as num?)?.toDouble() ?? 30;
-        _maxHumidity  = (data['maxHumidity']  as num?)?.toDouble() ?? 70; // FIXED
+        _maxHumidity  = (data['maxHumidity']  as num?)?.toDouble() ?? 80; // FIXED
         _maxGas       = (data['maxGas']       as num?)?.toDouble() ?? 20; // FIXED
         _notifyEnabled = data['notifyEnabled'] as bool? ?? true;
         final name = data['deviceName']?.toString() ?? '';
@@ -109,7 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _minTemp      = 18;
       _maxTemp      = 35;
       _minHumidity  = 30;
-      _maxHumidity  = 70; // FIXED: was 80
+      _maxHumidity  = 80; // FIXED: was 80
       _maxGas       = 20; // FIXED: was 70
       _notifyEnabled = true;
     });

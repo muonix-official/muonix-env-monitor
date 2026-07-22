@@ -13,9 +13,6 @@ class NotificationService {
   static const int _alertNotifId  = 1001;
   static const int _relayNotifId  = 1002; // single ID, replaces previous relay notif each time
 
-  static const String actionSeen    = 'ACTION_SEEN';
-  static const String actionSilence = 'ACTION_SILENCE';
-
   // Guard so initialize() is safe to call multiple times (background task calls it each run)
   static bool _initialized = false;
 
@@ -30,8 +27,6 @@ class NotificationService {
 
     await _localNotifications.initialize(
       const InitializationSettings(android: androidSettings),
-      onDidReceiveNotificationResponse: _onNotificationAction,
-      onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationAction,
     );
 
     const AndroidNotificationChannel alertChannel = AndroidNotificationChannel(
@@ -79,43 +74,6 @@ class NotificationService {
     });
   }
 
-  static void _onNotificationAction(NotificationResponse response) {
-    _handleAction(response.actionId, response.payload);
-  }
-
-  @pragma('vm:entry-point')
-  static void _onBackgroundNotificationAction(NotificationResponse response) {
-    _handleAction(response.actionId, response.payload);
-  }
-
-  static void _handleAction(String? actionId, String? payload) {
-    final deviceId = payload ?? '';
-    if (deviceId.isEmpty) return;
-
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    final liveRef = FirebaseDatabase.instance.ref('devices/$deviceId/live');
-
-    if (actionId == actionSeen) {
-      liveRef.child('ackBy/$uid').set({
-        'seen': true,
-        'silencedBuzzer': false,
-        'ts': ServerValue.timestamp,
-      });
-      // Explicitly cancel the notification since the ID is now fixed
-      _localNotifications.cancel(_alertNotifId);
-    } else if (actionId == actionSilence) {
-      liveRef.child('ackBy/$uid').set({
-        'seen': true,
-        'silencedBuzzer': true,
-        'ts': ServerValue.timestamp,
-      });
-      liveRef.child('buzzerOff').set(true);
-      _localNotifications.cancel(_alertNotifId);
-    }
-  }
-
   static Future<void> _saveToken() async {
     final token = await _fcm.getToken();
     if (token != null) await _saveTokenString(token);
@@ -150,7 +108,7 @@ class NotificationService {
     );
   }
 
-  // ── Danger notification with action buttons ──────────────────────────────
+  // ── Danger notification — device name + warning only, no action buttons ──
   static Future<void> showAlertNotification(
     double temp,
     double humidity, {
@@ -172,25 +130,13 @@ class NotificationService {
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       'sensorbox_danger',
       'SensorBox Danger',
-      channelDescription: 'Critical danger alerts with action buttons',
+      channelDescription: 'Critical danger alerts',
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
       enableVibration: true,
       vibrationPattern: Int64List.fromList([0, 1000, 300, 1000]),
       ongoing: false,
-      actions: <AndroidNotificationAction>[
-        const AndroidNotificationAction(
-          actionSeen,
-          "✅ I've Seen It",
-          cancelNotification: true,
-        ),
-        const AndroidNotificationAction(
-          actionSilence,
-          '🔕 Silence Buzzer',
-          cancelNotification: true,
-        ),
-      ],
     );
 
     await _localNotifications.show(

@@ -36,7 +36,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double minTemp = 18;
   double maxTemp = 35;
   double minHum = 30;
-  double maxHum = 70;
+  double maxHum = 80;
   double maxGas = 20;
 
   bool _settingsLoaded = false;
@@ -110,14 +110,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           minTemp = (data['minTemp']      ?? 18).toDouble();
           maxTemp = (data['maxTemp']      ?? 35).toDouble();
           minHum  = (data['minHumidity']  ?? 30).toDouble();
-          maxHum  = (data['maxHumidity']  ?? 70).toDouble();
+          maxHum  = (data['maxHumidity']  ?? 80).toDouble();
           maxGas  = (data['maxGas']       ?? 20).toDouble();
           _settingsLoaded = true;
         });
       } else {
         await _settingsRef.set({
           'minTemp': 18, 'maxTemp': 35,
-          'minHumidity': 30, 'maxHumidity': 70,
+          'minHumidity': 30, 'maxHumidity': 80,
           'maxGas': 20,
           'notifyEnabled': true,
           'deviceName': widget.deviceId,
@@ -126,7 +126,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           setState(() {
             deviceName = widget.deviceId;
             minTemp = 18; maxTemp = 35;
-            minHum = 30;  maxHum = 70;
+            minHum = 30;  maxHum = 80;
             maxGas = 20;
             _settingsLoaded = true;
           });
@@ -146,7 +146,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           minTemp = (data['minTemp']      ?? 18).toDouble();
           maxTemp = (data['maxTemp']      ?? 35).toDouble();
           minHum  = (data['minHumidity']  ?? 30).toDouble();
-          maxHum  = (data['maxHumidity']  ?? 70).toDouble();
+          maxHum  = (data['maxHumidity']  ?? 80).toDouble();
           maxGas  = (data['maxGas']       ?? 20).toDouble();
         });
         _recalculateAlert();
